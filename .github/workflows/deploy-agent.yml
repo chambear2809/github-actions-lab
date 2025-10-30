@@ -7,14 +7,22 @@ on:
       - main
 
 jobs:
+  prepare:
+    runs-on: self-hosted
+    outputs:
+      hosts: ${{ steps.set-matrix.outputs.hosts }}
+    steps:
+      - id: set-matrix
+        run: |
+          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr ',' '\n' | jq -R . | jq -s -c .)
+          echo "hosts=$HOSTS" >> $GITHUB_OUTPUT
+  
   deploy:
+    needs: prepare
     runs-on: self-hosted
     strategy:
       matrix:
-        host:
-          - 172.31.1.243
-          - 172.31.1.48
-          - 172.31.1.5
+        host: ${{ fromJson(needs.prepare.outputs.hosts) }}
     
     steps:
       - name: Checkout repository
