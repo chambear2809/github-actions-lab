@@ -1,0 +1,46 @@
+name: Deploy AppDynamics Smart Agent
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        host:
+          - ec2-54-87-218-158.compute-1.amazonaws.com
+          - ec2-204-236-198-70.compute-1.amazonaws.com
+          - ec2-3-81-228-67.compute-1.amazonaws.com
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ matrix.host }} >> ~/.ssh/known_hosts
+
+      - name: Copy agent zip to remote host
+        run: |
+          scp -i ~/.ssh/id_rsa appdsmartagent_64_linux_25.10.0.497.zip ubuntu@${{ matrix.host }}:/tmp/
+
+      - name: Copy config.ini to remote host
+        run: |
+          scp -i ~/.ssh/id_rsa config.ini ubuntu@${{ matrix.host }}:/tmp/
+
+      - name: Deploy and start agent
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
+            cd /tmp
+            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics
+            sudo cp config.ini /opt/appdynamics/config.ini
+            cd /opt/appdynamics
+            sudo ./smartagentctl start --enable-auto-attach --service
+          EOF
