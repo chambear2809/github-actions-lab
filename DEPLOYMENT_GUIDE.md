@@ -5,16 +5,25 @@ This guide documents the automated deployment of AppDynamics Smart Agent to mult
 
 ## Architecture
 
+### Lab Setup
+This lab demonstrates automated AppDynamics Smart Agent management across multiple EC2 instances:
+
+- **AWS Environment**: All resources deployed in a single AWS VPC
+- **Security Group**: All EC2 instances (runner and targets) share the same security group
+- **Self-hosted Runner**: One EC2 instance running the GitHub Actions runner
+- **Target Hosts**: Multiple Ubuntu EC2 instances within the same VPC
+- **Network Access**: Private IP communication between runner and targets via port 22 (SSH)
+
 ### Components
-- **GitHub Actions Workflow**: Orchestrates deployment across multiple hosts
-- **Self-hosted Runner**: Executes workflows from within your VPC
-- **Target Hosts**: Ubuntu servers receiving the AppDynamics Smart Agent
-- **GitHub Repository**: Stores workflow configuration and deployment artifacts
+- **GitHub Actions Workflows**: 13 workflows orchestrating agent lifecycle management
+- **Self-hosted Runner**: EC2 instance executing workflows from within the VPC
+- **Target Hosts**: Ubuntu EC2 servers receiving AppDynamics agents
+- **GitHub Repository**: Stores workflow configurations and deployment artifacts
 
 ### Workflow Design
-The deployment uses a two-job approach:
+All workflows use a consistent two-job approach:
 1. **Prepare Job**: Loads target hosts from GitHub variables and creates a dynamic matrix
-2. **Deploy Job**: Runs in parallel for each host, deploying the agent
+2. **Action Job**: Runs in parallel for each host, executing the specific operation
 
 ## Prerequisites
 
@@ -176,27 +185,70 @@ Navigate to: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/variables/acti
    ```
 4. Click **"Add variable"**
 
-### 7. Network Configuration
+### 7. Configure Optional Variables (for Smart Agent user/group)
 
-Ensure the self-hosted runner can reach target hosts:
-- Runner security group: Allow outbound SSH (port 22) to target hosts
-- Target host security groups: Allow inbound SSH (port 22) from runner
-- Runner requires outbound HTTPS (port 443) to GitHub
+Navigate to: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/variables/actions`
 
-## Deployment Process
+1. Click **"New repository variable"**
+2. Name: `SMARTAGENT_USER` (e.g., `appdynamics`)
+3. Click **"Add variable"**
+4. Repeat for `SMARTAGENT_GROUP` (e.g., `appdynamics`)
 
-### Manual Trigger
+These are optional and only used during initial Smart Agent deployment.
+
+### 8. Network Configuration
+
+For this lab setup with all EC2 instances in the same VPC and security group:
+- **Security Group Rules**:
+  - Allow inbound SSH (port 22) within the security group (source: same security group)
+  - Allow outbound HTTPS (port 443) to 0.0.0.0/0 (for GitHub API access)
+- **Private IPs**: Use private IP addresses (172.31.x.x) for `DEPLOYMENT_HOSTS`
+- **No public IPs needed**: Runner communicates with targets via private network
+
+## Available Workflows
+
+This repository includes 13 workflows for complete Smart Agent lifecycle management:
+
+### Initial Deployment
+1. **Deploy AppDynamics Smart Agent** - Installs Smart Agent and starts the service
+   - Supports optional `--user` and `--group` parameters via GitHub variables
+   - Auto-triggers on push to main, or manual via workflow_dispatch
+
+### Agent Installation (Manual trigger only)
+2. **Install Node Agent** - `smartagentctl install node`
+3. **Install Machine Agent** - `smartagentctl install machine`
+4. **Install DB Agent** - `smartagentctl install db`
+5. **Install Java Agent** - `smartagentctl install java`
+
+### Agent Uninstallation (Manual trigger only)
+6. **Uninstall Node Agent** - `smartagentctl uninstall node`
+7. **Uninstall Machine Agent** - `smartagentctl uninstall machine`
+8. **Uninstall DB Agent** - `smartagentctl uninstall db`
+9. **Uninstall Java Agent** - `smartagentctl uninstall java`
+
+### Smart Agent Management (Manual trigger only)
+10. **Stop and Clean Smart Agent** - `smartagentctl stop` + `smartagentctl clean`
+    - Stops the Smart Agent service and purges all data
+
+## Running Workflows
+
+### Manual Trigger (CLI)
 ```bash
 gh workflow run "Deploy AppDynamics Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Install Node Agent" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Uninstall Machine Agent" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Stop and Clean Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
 ```
 
-Or trigger via GitHub UI:
+### Manual Trigger (GitHub UI)
 1. Go to **Actions** tab
-2. Select **"Deploy AppDynamics Smart Agent"**
+2. Select the desired workflow from the left sidebar
 3. Click **"Run workflow"**
+4. Select branch (main)
+5. Click **"Run workflow"**
 
 ### Automatic Trigger
-Push to the `main` branch automatically triggers deployment:
+Only the "Deploy AppDynamics Smart Agent" workflow auto-triggers on push to `main`:
 ```bash
 git add .
 git commit -m "Update deployment configuration"
@@ -280,7 +332,16 @@ The workflow automatically processes all hosts in parallel using GitHub Actions 
 github-action-lab/
 ├── .github/
 │   └── workflows/
-│       └── deploy-agent.yml
+│       ├── deploy-agent.yml              # Initial Smart Agent deployment
+│       ├── install-node.yml              # Install node agent
+│       ├── install-machine.yml           # Install machine agent
+│       ├── install-db.yml                # Install db agent
+│       ├── install-java.yml              # Install java agent
+│       ├── uninstall-node.yml            # Uninstall node agent
+│       ├── uninstall-machine.yml         # Uninstall machine agent
+│       ├── uninstall-db.yml              # Uninstall db agent
+│       ├── uninstall-java.yml            # Uninstall java agent
+│       └── stop-clean-smartagent.yml     # Stop and clean Smart Agent
 ├── appdsmartagent_64_linux_25.10.0.497.zip
 ├── config.ini
 ├── hosts.txt (optional reference)
