@@ -8,13 +8,13 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         host:
-          - ec2-54-87-218-158.compute-1.amazonaws.com
-          - ec2-204-236-198-70.compute-1.amazonaws.com
-          - ec2-3-81-228-67.compute-1.amazonaws.com
+          - 172.31.1.243
+          - 172.31.1.48
+          - 172.31.1.5
     
     steps:
       - name: Checkout repository
