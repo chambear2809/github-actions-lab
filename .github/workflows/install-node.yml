@@ -36,5 +36,5 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
             cd /opt/appdynamics
-            sudo ./smartagent install node
+            sudo ./smartagentctl install node
           EOF
