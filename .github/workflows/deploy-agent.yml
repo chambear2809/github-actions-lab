@@ -62,5 +62,12 @@ jobs:
             
             # Start the agent
             cd /opt/appdynamics
-            sudo ./smartagentctl start --enable-auto-attach --service
+            USER="${{ vars.SMARTAGENT_USER }}"
+            GROUP="${{ vars.SMARTAGENT_GROUP }}"
+            
+            if [ -n "$USER" ] && [ -n "$GROUP" ]; then
+              sudo ./smartagentctl start --enable-auto-attach --service --user "$USER" --group "$GROUP"
+            else
+              sudo ./smartagentctl start --enable-auto-attach --service
+            fi
           EOF
