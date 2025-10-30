@@ -1,0 +1,45 @@
+name: Stop and Clean Smart Agent
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  prepare:
+    runs-on: self-hosted
+    outputs:
+      hosts: ${{ steps.set-matrix.outputs.hosts }}
+    steps:
+      - id: set-matrix
+        run: |
+          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^$' | xargs -n1 | jq -R . | jq -s -c .)
+          echo "hosts=$HOSTS" >> $GITHUB_OUTPUT
+  
+  stop-clean:
+    needs: prepare
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        host: ${{ fromJson(needs.prepare.outputs.hosts) }}
+    
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "Host *" > ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "  UserKnownHostsFile=/dev/null" >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Stop and clean Smart Agent
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
+            cd /opt/appdynamics
+            
+            # Stop Smart Agent (requires sudo if running as service)
+            sudo ./smartagentctl stop
+            
+            # Clean environment variables and purge Smart Agent data
+            sudo ./smartagentctl clean
+          EOF
