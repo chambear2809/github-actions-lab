@@ -41,9 +41,18 @@ jobs:
       - name: Deploy and start agent
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
+            # Install unzip if not present
+            sudo apt-get update -qq
+            sudo apt-get install -y unzip
+            
+            # Extract and deploy
             cd /tmp
-            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics
+            sudo mkdir -p /opt/appdynamics
+            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /tmp/agent
+            sudo cp -r /tmp/agent/* /opt/appdynamics/
             sudo cp config.ini /opt/appdynamics/config.ini
+            
+            # Start the agent
             cd /opt/appdynamics
             sudo ./smartagentctl start --enable-auto-attach --service
           EOF
