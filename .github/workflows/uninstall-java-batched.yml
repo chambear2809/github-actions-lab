@@ -1,0 +1,77 @@
+name: Uninstall Java Agent (Batched for Large Scale)
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Number of hosts per batch'
+        required: false
+        default: '256'
+        type: string
+
+jobs:
+  prepare:
+    runs-on: self-hosted
+    outputs:
+      batches: ${{ steps.create-batches.outputs.batches }}
+      total_hosts: ${{ steps.create-batches.outputs.total_hosts }}
+      total_batches: ${{ steps.create-batches.outputs.total_batches }}
+    steps:
+      - id: create-batches
+        run: |
+          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^$')
+          TOTAL=$(echo "$HOSTS" | wc -l | xargs)
+          echo "total_hosts=$TOTAL" >> $GITHUB_OUTPUT
+          BATCH_SIZE=${{ github.event.inputs.batch_size || '256' }}
+          TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
+          echo "total_batches=$TOTAL_BATCHES" >> $GITHUB_OUTPUT
+          BATCHES=$(echo "$HOSTS" | awk -v batch_size=$BATCH_SIZE '
+            BEGIN { batch=0; hosts="" }
+            { if (NR % batch_size == 1) { if (hosts != "") { print hosts } hosts = "\"" $0 "\""; batch++ } else { hosts = hosts ",\"" $0 "\"" } }
+            END { if (hosts != "") print hosts }
+          ' | jq -s -c '[.[] | split(",") | map(fromjson)]')
+          echo "batches=$BATCHES" >> $GITHUB_OUTPUT
+          echo "📊 Uninstalling Java agent from $TOTAL hosts across $TOTAL_BATCHES batches"
+
+  uninstall-batch:
+    needs: prepare
+    runs-on: self-hosted
+    strategy:
+      max-parallel: 1
+      matrix:
+        batch: ${{ fromJson(needs.prepare.outputs.batches) }}
+    steps:
+      - name: Uninstall java agent from batch hosts
+        run: |
+          BATCH_HOSTS='${{ toJson(matrix.batch) }}'
+          BATCH_SIZE=$(echo "$BATCH_HOSTS" | jq '. | length')
+          echo "🚀 Uninstalling Java agent from batch of $BATCH_SIZE hosts"
+          echo "$BATCH_HOSTS" | jq -r '.[]' | while read HOST; do
+            (
+              echo "📡 Uninstalling Java agent from $HOST"
+              mkdir -p ~/.ssh
+              echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
+              chmod 600 ~/.ssh/id_rsa_$HOST
+              ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@$HOST << 'EOF'
+                cd /opt/appdynamics/appdsmartagent
+                sudo ./smartagentctl uninstall java
+EOF
+              rm -f ~/.ssh/id_rsa_$HOST
+              echo "✅ Completed Java agent uninstall on $HOST"
+            ) &
+          done
+          wait
+          echo "✅ Batch uninstall complete"
+
+  summary:
+    needs: [prepare, uninstall-batch]
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Uninstall Summary
+        run: |
+          echo "📊 Java Agent Uninstall Summary"
+          echo "==============================="
+          echo "Total hosts: ${{ needs.prepare.outputs.total_hosts }}"
+          echo "Total batches: ${{ needs.prepare.outputs.total_batches }}"
+          echo "Status: ${{ needs.uninstall-batch.result }}"
