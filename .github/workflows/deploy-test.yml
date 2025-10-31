@@ -1,4 +1,4 @@
-name: Test 1. Deploy Smart Agent
+name: 1. Deploy Smart Agent
 
 on:
   workflow_dispatch:
@@ -17,154 +17,162 @@ jobs:
       total_hosts: ${{ steps.create-batches.outputs.total_hosts }}
       total_batches: ${{ steps.create-batches.outputs.total_batches }}
     steps:
-      - id: create-batches
+      - name: Ensure jq is installed
         run: |
-          # Parse hosts and remove empty lines
-          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^$')
-          
-          # Count total hosts
-          TOTAL=$(echo "$HOSTS" | wc -l | xargs)
-          echo "total_hosts=$TOTAL" >> $GITHUB_OUTPUT
-          
-          # Batch size from input or default
-          BATCH_SIZE=${{ github.event.inputs.batch_size || '256' }}
-          
-          # Calculate number of batches needed
-          TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
-          echo "total_batches=$TOTAL_BATCHES" >> $GITHUB_OUTPUT
-          
-          # Create batches as JSON array
-          BATCHES=$(echo "$HOSTS" | awk -v batch_size=$BATCH_SIZE '
-            BEGIN { batch=0; print "[" }
-            {
-              if (NR % batch_size == 1) {
-                if (NR > 1) { print "]" }
-                if (NR > 1) { print "," }
-                print "["
-                printf "\"%s\"", $0
-              } else {
-                printf ",\"%s\"", $0
-              }
-            }
-            END { if (NR > 0) { print "]" }; print "]" }
-          ' | jq -c .)
-          
-          echo "batches=$BATCHES" >> $GITHUB_OUTPUT
-          
-          echo "📊 Deploying to $TOTAL hosts across $TOTAL_BATCHES batches"
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y jq
+          fi
 
----
+      - id: create-batches
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Read hosts (one per line) from Actions var, normalize, drop empties
+          HOSTS=$(printf '%s\n' "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^\s*$' || true)
+
+          # Count total hosts
+          TOTAL=$(printf '%s\n' "$HOSTS" | wc -l | xargs || true)
+          echo "total_hosts=$TOTAL" >> "$GITHUB_OUTPUT"
+
+          if [ "${TOTAL:-0}" -eq 0 ]; then
+            echo "total_batches=0" >> "$GITHUB_OUTPUT"
+            echo 'batches=[]' >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No hosts provided."
+            exit 0
+          fi
+
+          # Batch size (string -> int)
+          BATCH_SIZE=${{ github.event.inputs.batch_size || '256' }}
+
+          # Calculate number of batches
+          TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
+          echo "total_batches=$TOTAL_BATCHES" >> "$GITHUB_OUTPUT"
+
+          # Build JSON array of arrays: [ ["h1","h2",...], ["hX",...], ... ]
+          BATCHES=$(printf '%s\n' "$HOSTS" \
+            | awk -v batch_size="$BATCH_SIZE" '
+                BEGIN { outer_open=0 }
+                {
+                  if ((NR-1) % batch_size == 0) {
+                    if (outer_open==0) { printf "[["; outer_open=1 } else { printf "],[" }
+                    printf "%s\"%s\"", (1 ? "" : ","), $0
+                    next
+                  }
+                  printf ",\"%s\"", $0
+                }
+                END { if (outer_open==1) printf "]]"; else printf "[]" }
+              ' \
+            | jq -c .)
+
+          echo "batches=$BATCHES" >> "$GITHUB_OUTPUT"
+          echo "📊 Deploying to $TOTAL hosts across $TOTAL_BATCHES batches"
 
   deploy-batch:
     needs: prepare
     runs-on: self-hosted
+    if: needs.prepare.outputs.total_batches != '0'
     strategy:
-      max-parallel: 1  # Run batches sequentially to avoid overwhelming resources
+      max-parallel: 1
       matrix:
         batch: ${{ fromJson(needs.prepare.outputs.batches) }}
-    
+
     steps:
+      - name: Ensure jq is installed
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y jq
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Deploy to batch hosts
+        shell: bash
         run: |
+          set -euo pipefail
+
           BATCH_HOSTS='${{ toJson(matrix.batch) }}'
-          BATCH_SIZE=$(echo "$BATCH_HOSTS" | jq '. | length')
+          BATCH_SIZE=$(jq 'length' <<<"$BATCH_HOSTS")
           SSH_USER="${{ vars.SSH_USER || 'ubuntu' }}"
           echo "🚀 Deploying to batch of $BATCH_SIZE hosts"
-          
-          # Define the full remote deployment script in a shell variable
-          # Note: We use 'EOF' here to ensure the script content is clean
-          # and the $SMARTAGENT_USER/$SMARTAGENT_GROUP are passed as environment variables.
+
+          # Shared failure file path (works across subshells)
+          FAIL_FILE="/tmp/failed_hosts_${GITHUB_RUN_ID:-$$}"
+          : > "$FAIL_FILE"
+
+          # One key file per run (reuse across hosts)
+          KEY_FILE="$HOME/.ssh/id_rsa_ga_${GITHUB_RUN_ID:-$RANDOM}"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          # Remote script (heredoc kept literal)
           REMOTE_SCRIPT=$(cat << 'EOF'
             set -e
-            
-            # The variables SMARTAGENT_USER and SMARTAGENT_GROUP are already set 
-            # as environment variables by the parent shell before 'bash -s' starts.
-
             sudo apt-get update -qq && sudo apt-get install -y unzip
             sudo rm -rf /opt/appdynamics/appdsmartagent
             sudo mkdir -p /opt/appdynamics/appdsmartagent
-            
-            # Unzip and copy config file from /tmp (where scp placed them)
-            sudo unzip /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent
+
+            sudo unzip -o /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent
             sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
-            
+
             cd /opt/appdynamics/appdsmartagent
-            
-            # Start agent, checking if optional user/group vars were provided
-            if [ -n "$SMARTAGENT_USER" ] && [ -n "$SMARTAGENT_GROUP" ]; then 
+            if [ -n "${SMARTAGENT_USER:-}" ] && [ -n "${SMARTAGENT_GROUP:-}" ]; then
               echo "Starting agent with user/group: $SMARTAGENT_USER/$SMARTAGENT_GROUP"
               sudo ./smartagentctl start --enable-auto-attach --service --user "$SMARTAGENT_USER" --group "$SMARTAGENT_GROUP"
-            else 
+            else
               echo "Starting agent with default user/group"
               sudo ./smartagentctl start --enable-auto-attach --service
             fi
-            
             echo "Remote script completed successfully."
-EOF
+          EOF
           )
 
-          # Process each host in the batch in parallel using background processes
-          echo "$BATCH_HOSTS" | jq -r '.[]' | while read HOST; do
+          SMARTAGENT_USER="${{ vars.SMARTAGENT_USER }}"
+          SMARTAGENT_GROUP="${{ vars.SMARTAGENT_GROUP }}"
+
+          # Iterate hosts (parallelize per host)
+          while read -r HOST; do
             (
               echo "📡 Starting deployment to $HOST"
-              
-              # Setup SSH
-              mkdir -p ~/.ssh
-              echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
-              chmod 600 ~/.ssh/id_rsa_$HOST
-              
-              # Copy files - error handling remains the same
-              if ! scp -i ~/.ssh/id_rsa_$HOST \
-                  -o StrictHostKeyChecking=no \
-                  -o UserKnownHostsFile=/dev/null \
-                  -o ConnectTimeout=30 \
-                  appdsmartagent_64_linux_25.10.0.497.zip "${SSH_USER}@${HOST}:/tmp/" \
-                  config.ini "${SSH_USER}@${HOST}:/tmp/"; then # Combined SCP for brevity
+
+              # Copy artifacts (single destination)
+              if ! scp -i "$KEY_FILE" \
+                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 \
+                    appdsmartagent_64_linux_25.10.0.497.zip config.ini \
+                    "${SSH_USER}@${HOST}:/tmp/"; then
                 echo "❌ Failed to copy files to $HOST" >&2
-                rm -f ~/.ssh/id_rsa_$HOST
-                echo "$HOST" >> /tmp/failed_hosts_$$
+                echo "$HOST" >> "$FAIL_FILE"
                 exit 1
               fi
-              
-              # Deploy and start agent using the piped script
-              SMARTAGENT_USER="${{ vars.SMARTAGENT_USER }}"
-              SMARTAGENT_GROUP="${{ vars.SMARTAGENT_GROUP }}"
-              
-              # 1. Pipe the script to the SSH command
-              # 2. Pass SMARTAGENT variables as environment variables
-              # 3. Execute the script with 'bash -s'
-              if echo "$REMOTE_SCRIPT" | ssh -i ~/.ssh/id_rsa_$HOST \
-                  -o StrictHostKeyChecking=no \
-                  -o UserKnownHostsFile=/dev/null \
-                  -o ConnectTimeout=30 \
-                  "${SSH_USER}@${HOST}" "SMARTAGENT_USER='$SMARTAGENT_USER' SMARTAGENT_GROUP='$SMARTAGENT_GROUP' bash -s"; then
-                
+
+              # Run remote script
+              if echo "$REMOTE_SCRIPT" | ssh -i "$KEY_FILE" \
+                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 \
+                    "${SSH_USER}@${HOST}" \
+                    "SMARTAGENT_USER='${SMARTAGENT_USER}' SMARTAGENT_GROUP='${SMARTAGENT_GROUP}' bash -s"; then
                 echo "✅ Completed deployment to $HOST"
               else
                 echo "❌ Failed to deploy to $HOST" >&2
-                echo "$HOST" >> /tmp/failed_hosts_$$
+                echo "$HOST" >> "$FAIL_FILE"
               fi
-              
-              # Cleanup
-              rm -f ~/.ssh/id_rsa_$HOST
             ) &
-          done
-          
-          # Wait for all parallel deployments to complete
+          done < <(jq -r '.[]' <<<"$BATCH_HOSTS")
+
+          # Wait for all backgrounded per-host jobs
           wait
-          
-          if [ -f /tmp/failed_hosts_$$ ]; then
+
+          # Evaluate failures
+          if [ -s "$FAIL_FILE" ]; then
             echo "❌ Some hosts failed:"
-            cat /tmp/failed_hosts_$$
-            rm -f /tmp/failed_hosts_$$
+            cat "$FAIL_FILE"
+            rm -f "$FAIL_FILE" "$KEY_FILE"
             exit 1
           fi
-          echo "✅ Batch deployment complete"
 
----
+          rm -f "$FAIL_FILE" "$KEY_FILE"
+          echo "✅ Batch deployment complete"
 
   summary:
     needs: [prepare, deploy-batch]
