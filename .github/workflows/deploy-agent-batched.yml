@@ -113,7 +113,7 @@ jobs:
                   -o StrictHostKeyChecking=no \
                   -o UserKnownHostsFile=/dev/null \
                   -o ConnectTimeout=30 \
-                  "${SSH_USER}@${HOST}" "SMARTAGENT_USER='$SMARTAGENT_USER' SMARTAGENT_GROUP='$SMARTAGENT_GROUP' bash -lc 'set -e; sudo apt-get update -qq && sudo apt-get install -y unzip; sudo rm -rf /opt/appdynamics/appdsmartagent; sudo mkdir -p /opt/appdynamics/appdsmartagent; sudo unzip -o /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent; sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini; cd /opt/appdynamics/appdsmartagent; if [ -n \"$SMARTAGENT_USER\" ] && [ -n \"$SMARTAGENT_GROUP\" ]; then sudo ./smartagentctl start --enable-auto-attach --service --user \"$SMARTAGENT_USER\" --group \"$SMARTAGENT_GROUP\"; else sudo ./smartagentctl start --enable-auto-attach --service; fi'"; then
+                  "${SSH_USER}@${HOST}" "SMARTAGENT_USER='$SMARTAGENT_USER' SMARTAGENT_GROUP='$SMARTAGENT_GROUP' bash -lc 'set -e; sudo apt-get update -qq && sudo apt-get install -y unzip; sudo rm -rf /opt/appdynamics/appdsmartagent; sudo mkdir -p /opt/appdynamics/appdsmartagent; sudo unzip /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent; sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini; cd /opt/appdynamics/appdsmartagent; if [ -n \"$SMARTAGENT_USER\" ] && [ -n \"$SMARTAGENT_GROUP\" ]; then sudo ./smartagentctl start --enable-auto-attach --service --user \"$SMARTAGENT_USER\" --group \"$SMARTAGENT_GROUP\"; else sudo ./smartagentctl start --enable-auto-attach --service; fi'"; then
                 echo "✅ Completed deployment to $HOST"
               else
                 echo "❌ Failed to deploy to $HOST" >&2
