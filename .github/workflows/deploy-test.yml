@@ -1,4 +1,4 @@
-name: 1. Deploy Smart Agent
+name: Test 1. Deploy Smart Agent
 
 on:
   workflow_dispatch:
