@@ -8,7 +8,7 @@ Automated deployment and lifecycle management of AppDynamics Smart Agent across 
 
 ## 🎯 Overview
 
-This lab demonstrates how to use GitHub Actions to manage AppDynamics Smart Agent and various AppDynamics agents (Node, Machine, DB, Java) across multiple Ubuntu EC2 instances within a single AWS VPC.
+This lab demonstrates how to use GitHub Actions to manage AppDynamics Smart Agent and various AppDynamics agents (Node, Machine, DB, Java) across multiple Ubuntu EC2 instances within a single AWS VPC. The project includes 11 automated workflows covering the complete agent lifecycle.
 
 **Key Features:**
 - 🚀 **Parallel Deployment** - Deploy to multiple hosts simultaneously
@@ -66,21 +66,25 @@ Navigate to: **Settings → Secrets and variables → Actions → Variables**
 
 **Via GitHub UI:**
 1. Go to **Actions** tab
-2. Select **"Deploy AppDynamics Smart Agent"**
+2. Select **"Deploy Smart Agent"**
 3. Click **"Run workflow"**
+4. Optionally adjust batch size (default: 256)
+5. Click **"Run workflow"**
 
 **Via GitHub CLI:**
 ```bash
-gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-actions-lab
+gh workflow run "Deploy Smart Agent" --repo chambear2809/github-actions-lab
+
+# With custom batch size
+gh workflow run "Deploy Smart Agent" --repo chambear2809/github-actions-lab -f batch_size=128
 ```
 
 ## 📋 Available Workflows
 
-### Deployment (2 workflows)
+### Deployment (1 workflow)
 | Workflow | Description | Scale | Trigger |
 |----------|-------------|-------|----------|
-| **Deploy AppDynamics Smart Agent** | Installs Smart Agent and starts service | Any | Push to `main` or manual |
-| **Deploy AppDynamics Smart Agent (Batched)** | Batched deployment for large-scale operations | **Any (optimized for >256)** | Manual only |
+| **Deploy Smart Agent (Batched)** | Installs Smart Agent and starts service | Any | Manual only |
 
 ### Agent Installation (4 batched workflows)
 | Workflow | Command | Scale | Trigger |
@@ -98,10 +102,11 @@ gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-acti
 | **Uninstall DB Agent (Batched)** | `smartagentctl uninstall db` | Any | Manual only |
 | **Uninstall Java Agent (Batched)** | `smartagentctl uninstall java` | Any | Manual only |
 
-### Smart Agent Management (1 batched workflow)
+### Smart Agent Management (2 batched workflows)
 | Workflow | Description | Scale | Trigger |
 |----------|-------------|-------|----------|
 | **Stop and Clean Smart Agent (Batched)** | Stops service and purges data | Any | Manual only |
+| **Cleanup All Agents (Batched)** | Deletes /opt/appdynamics directory | Any | Manual only |
 
 **Total: 11 workflows** - All batched workflows support configurable batch sizes (default: 256)
 
@@ -128,25 +133,24 @@ gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-acti
 
 ## 📈 Scaling
 
-### Small to Medium Deployments (≤256 hosts)
-Use **Deploy AppDynamics Smart Agent** workflow:
-- Leverages GitHub Actions matrix for parallel execution
-- Simple, fast, and efficient for smaller fleets
+All workflows use automatic batching to support any number of hosts:
 
-### Large-Scale Deployments (>256 hosts)
-Use **Deploy AppDynamics Smart Agent (Batched)** workflow:
+### How It Works
 - **Automatic batching** - Splits hosts into groups of 256 (configurable)
 - **Sequential batch processing** - Avoids overwhelming runner resources
-- **Parallel within batch** - Each batch deploys to 256 hosts simultaneously
-- **Proven at scale** - Designed for thousands of hosts
+- **Parallel within batch** - Each batch processes all hosts simultaneously
+- **Works at any scale** - 1 host to thousands
 
-**Why Batching?**
-GitHub Actions has a hard limit of 256 jobs per matrix. The batched workflow overcomes this by:
-1. Splitting your host list into manageable batches
-2. Processing each batch as a separate job
-3. Deploying to all hosts within each batch in parallel
+### Batching Strategy
+1. Splits your host list into manageable batches
+2. Processes each batch as a separate job sequentially
+3. Deploys to all hosts within each batch in parallel using background processes
 
-**Example:** 1,000 hosts = 4 batches × 256 hosts = 4 sequential jobs, each deploying in parallel
+**Examples:**
+- **10 hosts** = 1 batch, all deploy in parallel
+- **500 hosts** = 2 batches × 256 hosts
+- **1,000 hosts** = 4 batches × 256 hosts
+- **5,000 hosts** = 20 batches × 256 hosts
 
 ## 🤝 Contributing
 

@@ -95,13 +95,12 @@ graph LR
 graph TD
     Root[GitHub Actions Workflows<br/>11 Total]
     
-    Root --> Deploy[Deployment<br/>2 workflows]
+    Root --> Deploy[Deployment<br/>1 workflow]
     Root --> Install[Agent Installation<br/>4 batched workflows]
     Root --> Uninstall[Agent Uninstallation<br/>4 batched workflows]
-    Root --> Manage[Smart Agent Management<br/>1 batched workflow]
+    Root --> Manage[Smart Agent Management<br/>2 batched workflows]
 
-    Deploy --> D1[Deploy Standard<br/>Auto-trigger]
-    Deploy --> D2[Deploy Batched<br/>Any scale]
+    Deploy --> D1[Deploy Smart Agent<br/>Batched, Manual trigger]
     
     Install --> I1[Install Node<br/>Batched]
     Install --> I2[Install Machine<br/>Batched]
@@ -114,6 +113,7 @@ graph TD
     Uninstall --> U4[Uninstall Java<br/>Batched]
     
     Manage --> M1[Stop and Clean<br/>Batched]
+    Manage --> M2[Cleanup All Agents<br/>Batched]
 
     style Root fill:#6f42c1,color:#fff
     style Deploy fill:#28a745,color:#fff
@@ -192,10 +192,7 @@ graph LR
 ```mermaid
 graph TD
     A[Number of Hosts]
-    A -->|"≤ 256"| B[Standard Workflow<br/>deploy-agent.yml]
-    A -->|"> 256"| C[Batched Workflow<br/>deploy-agent-batched.yml]
-    
-    B --> D[GitHub Actions Matrix<br/>All hosts in parallel]
+    A -->|Any| C[Batched Workflow<br/>deploy-agent-batched.yml]
     
     C --> E[Prepare Job<br/>Split into batches]
     E --> F[Batch 1: 256 hosts<br/>Parallel deployment]
@@ -205,11 +202,9 @@ graph TD
     F --> I[Sequential Execution<br/>One batch at a time]
     G --> I
     H --> I
-
+    
     style A fill:#0366d6,color:#fff
-    style B fill:#28a745,color:#fff
-    style C fill:#ffd33d,color:#000
-    style D fill:#c8e6c9,color:#000
+    style C fill:#28a745,color:#fff
     style E fill:#e1bee7,color:#000
     style F fill:#fff3e0,color:#000
     style G fill:#fff3e0,color:#000
