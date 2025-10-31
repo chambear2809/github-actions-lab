@@ -64,10 +64,8 @@ jobs:
               echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
               chmod 600 ~/.ssh/id_rsa_$HOST
               
-              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" << 'EOF'
-cd /opt/appdynamics/appdsmartagent
-sudo ./smartagentctl uninstall node
-EOF
+              ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" 'cd /opt/appdynamics/appdsmartagent && sudo ./smartagentctl uninstall node'
+              if [ $? -eq 0 ]
               then
                 echo "✅ Completed Node agent uninstall on $HOST"
               else

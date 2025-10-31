@@ -64,15 +64,8 @@ jobs:
               echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
               chmod 600 ~/.ssh/id_rsa_$HOST
               
-              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" << 'EOF'
-cd /opt/appdynamics/appdsmartagent
-
-# Stop Smart Agent
-sudo ./smartagentctl stop
-
-# Clean environment and purge data
-sudo ./smartagentctl clean
-EOF
+              ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" 'cd /opt/appdynamics/appdsmartagent && sudo ./smartagentctl stop && sudo ./smartagentctl clean'
+              if [ $? -eq 0 ]
               then
                 echo "✅ Completed stop and clean on $HOST"
               else
