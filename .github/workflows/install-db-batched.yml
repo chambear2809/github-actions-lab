@@ -45,22 +45,38 @@ jobs:
         run: |
           BATCH_HOSTS='${{ toJson(matrix.batch) }}'
           BATCH_SIZE=$(echo "$BATCH_HOSTS" | jq '. | length')
+          SSH_USER="${{ vars.SSH_USER || 'ubuntu' }}"
           echo "🚀 Installing DB agent on batch of $BATCH_SIZE hosts"
+          
           echo "$BATCH_HOSTS" | jq -r '.[]' | while read HOST; do
             (
               echo "📡 Installing DB agent on $HOST"
               mkdir -p ~/.ssh
               echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
               chmod 600 ~/.ssh/id_rsa_$HOST
-              ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@$HOST << 'EOF'
+              
+              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" << 'EOF'
                 cd /opt/appdynamics/appdsmartagent
                 sudo ./smartagentctl install db
 EOF
+              then
+                echo "✅ Completed DB agent installation on $HOST"
+              else
+                echo "❌ Failed to install DB agent on $HOST" >&2
+                echo "$HOST" >> /tmp/failed_hosts_$$
+              fi
+              
               rm -f ~/.ssh/id_rsa_$HOST
-              echo "✅ Completed DB agent installation on $HOST"
             ) &
           done
           wait
+          
+          if [ -f /tmp/failed_hosts_$$ ]; then
+            echo "❌ Some hosts failed:"
+            cat /tmp/failed_hosts_$$
+            rm -f /tmp/failed_hosts_$$
+            exit 1
+          fi
           echo "✅ Batch installation complete"
 
   summary:
