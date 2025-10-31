@@ -76,32 +76,34 @@ gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-acti
 
 ## 📋 Available Workflows
 
-### Initial Deployment
+### Deployment (2 workflows)
 | Workflow | Description | Scale | Trigger |
 |----------|-------------|-------|----------|
-| **Deploy AppDynamics Smart Agent** | Installs Smart Agent and starts service | Up to 256 hosts | Push to `main` or manual |
-| **Deploy AppDynamics Smart Agent (Batched)** | Batched deployment for large-scale operations | **Thousands of hosts** | Manual only |
+| **Deploy AppDynamics Smart Agent** | Installs Smart Agent and starts service | Any | Push to `main` or manual |
+| **Deploy AppDynamics Smart Agent (Batched)** | Batched deployment for large-scale operations | **Any (optimized for >256)** | Manual only |
 
-### Agent Installation
-| Workflow | Command | Trigger |
-|----------|---------|----------|
-| **Install Node Agent** | `smartagentctl install node` | Manual only |
-| **Install Machine Agent** | `smartagentctl install machine` | Manual only |
-| **Install DB Agent** | `smartagentctl install db` | Manual only |
-| **Install Java Agent** | `smartagentctl install java` | Manual only |
+### Agent Installation (4 batched workflows)
+| Workflow | Command | Scale | Trigger |
+|----------|---------|-------|----------|
+| **Install Node Agent (Batched)** | `smartagentctl install node` | Any | Manual only |
+| **Install Machine Agent (Batched)** | `smartagentctl install machine` | Any | Manual only |
+| **Install DB Agent (Batched)** | `smartagentctl install db` | Any | Manual only |
+| **Install Java Agent (Batched)** | `smartagentctl install java` | Any | Manual only |
 
-### Agent Uninstallation
-| Workflow | Command | Trigger |
-|----------|---------|----------|
-| **Uninstall Node Agent** | `smartagentctl uninstall node` | Manual only |
-| **Uninstall Machine Agent** | `smartagentctl uninstall machine` | Manual only |
-| **Uninstall DB Agent** | `smartagentctl uninstall db` | Manual only |
-| **Uninstall Java Agent** | `smartagentctl uninstall java` | Manual only |
+### Agent Uninstallation (4 batched workflows)
+| Workflow | Command | Scale | Trigger |
+|----------|---------|-------|----------|
+| **Uninstall Node Agent (Batched)** | `smartagentctl uninstall node` | Any | Manual only |
+| **Uninstall Machine Agent (Batched)** | `smartagentctl uninstall machine` | Any | Manual only |
+| **Uninstall DB Agent (Batched)** | `smartagentctl uninstall db` | Any | Manual only |
+| **Uninstall Java Agent (Batched)** | `smartagentctl uninstall java` | Any | Manual only |
 
-### Smart Agent Management
-| Workflow | Description | Trigger |
-|----------|-------------|----------|
-| **Stop and Clean Smart Agent** | Stops service and purges data | Manual only |
+### Smart Agent Management (1 batched workflow)
+| Workflow | Description | Scale | Trigger |
+|----------|-------------|-------|----------|
+| **Stop and Clean Smart Agent (Batched)** | Stops service and purges data | Any | Manual only |
+
+**Total: 11 workflows** - All batched workflows support configurable batch sizes (default: 256)
 
 ## 📚 Documentation
 

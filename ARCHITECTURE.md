@@ -95,25 +95,25 @@ graph LR
 graph TD
     Root[GitHub Actions Workflows<br/>11 Total]
     
-    Root --> Deploy[Initial Deployment<br/>2 workflows]
-    Root --> Install[Agent Installation<br/>4 workflows]
-    Root --> Uninstall[Agent Uninstallation<br/>4 workflows]
-    Root --> Manage[Smart Agent Management<br/>1 workflow]
+    Root --> Deploy[Deployment<br/>2 workflows]
+    Root --> Install[Agent Installation<br/>4 batched workflows]
+    Root --> Uninstall[Agent Uninstallation<br/>4 batched workflows]
+    Root --> Manage[Smart Agent Management<br/>1 batched workflow]
 
-    Deploy --> D1[Deploy Standard<br/>≤256 hosts]
-    Deploy --> D2[Deploy Batched<br/>>256 hosts]
+    Deploy --> D1[Deploy Standard<br/>Auto-trigger]
+    Deploy --> D2[Deploy Batched<br/>Any scale]
     
-    Install --> I1[Install Node Agent]
-    Install --> I2[Install Machine Agent]
-    Install --> I3[Install DB Agent]
-    Install --> I4[Install Java Agent]
+    Install --> I1[Install Node<br/>Batched]
+    Install --> I2[Install Machine<br/>Batched]
+    Install --> I3[Install DB<br/>Batched]
+    Install --> I4[Install Java<br/>Batched]
     
-    Uninstall --> U1[Uninstall Node Agent]
-    Uninstall --> U2[Uninstall Machine Agent]
-    Uninstall --> U3[Uninstall DB Agent]
-    Uninstall --> U4[Uninstall Java Agent]
+    Uninstall --> U1[Uninstall Node<br/>Batched]
+    Uninstall --> U2[Uninstall Machine<br/>Batched]
+    Uninstall --> U3[Uninstall DB<br/>Batched]
+    Uninstall --> U4[Uninstall Java<br/>Batched]
     
-    Manage --> M1[Stop and Clean<br/>Smart Agent]
+    Manage --> M1[Stop and Clean<br/>Batched]
 
     style Root fill:#6f42c1,color:#fff
     style Deploy fill:#28a745,color:#fff

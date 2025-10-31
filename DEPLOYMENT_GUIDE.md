@@ -207,57 +207,66 @@ For this lab setup with all EC2 instances in the same VPC and security group:
 
 ## Available Workflows
 
-This repository includes 11 workflows for complete Smart Agent lifecycle management:
+This repository includes **11 workflows** for complete Smart Agent lifecycle management:
 
-### Initial Deployment
+### Deployment (2 workflows)
 
-#### Standard Deployment (≤256 hosts)
+#### Standard Deployment
 1. **Deploy AppDynamics Smart Agent** - Installs Smart Agent and starts the service
    - Uses GitHub Actions matrix strategy for parallel execution
    - Supports optional `--user` and `--group` parameters via GitHub variables
    - Auto-triggers on push to main, or manual via workflow_dispatch
-   - **Best for:** Small to medium deployments (up to 256 hosts)
+   - **Best for:** Quick deployments with auto-trigger capability
 
-#### Large-Scale Deployment (>256 hosts)
-2. **Deploy AppDynamics Smart Agent (Batched)** - Batched deployment for thousands of hosts
+#### Batched Deployment  
+2. **Deploy AppDynamics Smart Agent (Batched)** - Batched deployment for any scale
    - **Automatic batching:** Splits host list into configurable batch sizes (default: 256)
    - **Sequential batch execution:** Processes batches one at a time to avoid overwhelming resources
    - **Parallel within batch:** All hosts in a batch deploy simultaneously
    - **Configurable:** Set custom batch size via workflow input
    - Manual trigger only
-   - **Best for:** Large deployments (hundreds to thousands of hosts)
-   
-   **Why batching?** GitHub Actions limits matrix jobs to 256. This workflow overcomes that by:
-   - Dividing hosts into batches of 256 (or custom size)
-   - Creating one matrix job per batch
-   - Processing batches sequentially while deploying within each batch in parallel
+   - **Best for:** Large deployments (optimized for >256 hosts, works for any scale)
    
    **Example:** 1,500 hosts → 6 batches × 256 hosts = 6 sequential jobs
 
-### Agent Installation (Manual trigger only)
-3. **Install Node Agent** - `smartagentctl install node`
-4. **Install Machine Agent** - `smartagentctl install machine`
-5. **Install DB Agent** - `smartagentctl install db`
-6. **Install Java Agent** - `smartagentctl install java`
+### Agent Installation - Batched (4 workflows, manual trigger only)
+3. **Install Node Agent (Batched)** - `smartagentctl install node`
+4. **Install Machine Agent (Batched)** - `smartagentctl install machine`
+5. **Install DB Agent (Batched)** - `smartagentctl install db`
+6. **Install Java Agent (Batched)** - `smartagentctl install java`
 
-### Agent Uninstallation (Manual trigger only)
-7. **Uninstall Node Agent** - `smartagentctl uninstall node`
-8. **Uninstall Machine Agent** - `smartagentctl uninstall machine`
-9. **Uninstall DB Agent** - `smartagentctl uninstall db`
-10. **Uninstall Java Agent** - `smartagentctl uninstall java`
+All install workflows support:
+- Configurable batch size (default: 256)
+- Sequential batch processing
+- Parallel execution within each batch
+- Works for any number of hosts (1 to thousands)
 
-### Smart Agent Management (Manual trigger only)
-11. **Stop and Clean Smart Agent** - `smartagentctl stop` + `smartagentctl clean`
+### Agent Uninstallation - Batched (4 workflows, manual trigger only)
+7. **Uninstall Node Agent (Batched)** - `smartagentctl uninstall node`
+8. **Uninstall Machine Agent (Batched)** - `smartagentctl uninstall machine`
+9. **Uninstall DB Agent (Batched)** - `smartagentctl uninstall db`
+10. **Uninstall Java Agent (Batched)** - `smartagentctl uninstall java`
+
+All uninstall workflows support:
+- Configurable batch size (default: 256)
+- Sequential batch processing
+- Parallel execution within each batch
+- Works for any number of hosts (1 to thousands)
+
+### Smart Agent Management - Batched (1 workflow, manual trigger only)
+11. **Stop and Clean Smart Agent (Batched)** - `smartagentctl stop` + `smartagentctl clean`
     - Stops the Smart Agent service and purges all data
+    - Configurable batch size (default: 256)
+    - Works for any number of hosts (1 to thousands)
 
 ## Running Workflows
 
 ### Manual Trigger (CLI)
 ```bash
-# Standard deployment (≤256 hosts)
+# Standard deployment (auto-triggers on push)
 gh workflow run "Deploy AppDynamics Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
 
-# Large-scale batched deployment (>256 hosts)
+# Batched deployment (any scale)
 gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
 
 # With custom batch size
@@ -265,10 +274,20 @@ gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" \
   --repo YOUR_USERNAME/YOUR_REPO \
   -f batch_size=128
 
-# Other workflows
-gh workflow run "Install Node Agent" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Uninstall Machine Agent" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Stop and Clean Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
+# Install agents (batched)
+gh workflow run "Install Node Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Install Machine Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Install DB Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Install Java Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+
+# Uninstall agents (batched)
+gh workflow run "Uninstall Node Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Uninstall Machine Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Uninstall DB Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+gh workflow run "Uninstall Java Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+
+# Stop and clean (batched)
+gh workflow run "Stop and Clean Smart Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
 ```
 
 ### Manual Trigger (GitHub UI)
@@ -330,18 +349,19 @@ Simply update the `DEPLOYMENT_HOSTS` variable:
 
 ### Choosing the Right Workflow
 
-#### For ≤256 Hosts: Standard Workflow
+#### Standard Deployment Workflow
 Use **Deploy AppDynamics Smart Agent**:
 - Simple GitHub Actions matrix strategy
-- All hosts deploy in parallel
-- Fastest for smaller fleets
+- All hosts deploy in parallel (up to 256)
 - Auto-triggers on push to `main`
+- **Best for:** Quick deployments with CI/CD integration
 
-#### For >256 Hosts: Batched Workflow
-Use **Deploy AppDynamics Smart Agent (Batched for Large Scale)**:
-- Automatic host batching (default: 256 per batch)
-- Sequential batch processing
-- Parallel deployment within each batch
+#### Batched Workflows (Deployment + All Operations)
+Use **batched workflows** for:
+- **Any scale** - Works with 1 host or thousands
+- **Optimized for >256 hosts** - Overcomes GitHub Actions matrix limit
+- **Configurable batching** - Adjust batch size based on your needs
+- **All operations** - Deploy, install, uninstall, stop-clean
 - Manual trigger with optional batch size customization
 
 ### How Batching Works
@@ -414,17 +434,17 @@ Each batch logs:
 github-action-lab/
 ├── .github/
 │   └── workflows/
-│       ├── deploy-agent.yml              # Standard deployment (≤256 hosts)
-│       ├── deploy-agent-batched.yml      # Large-scale batched deployment (>256 hosts)
-│       ├── install-node.yml              # Install node agent
-│       ├── install-machine.yml           # Install machine agent
-│       ├── install-db.yml                # Install db agent
-│       ├── install-java.yml              # Install java agent
-│       ├── uninstall-node.yml            # Uninstall node agent
-│       ├── uninstall-machine.yml         # Uninstall machine agent
-│       ├── uninstall-db.yml              # Uninstall db agent
-│       ├── uninstall-java.yml            # Uninstall java agent
-│       └── stop-clean-smartagent.yml     # Stop and clean Smart Agent
+│       ├── deploy-agent.yml                      # Standard deployment (auto-trigger)
+│       ├── deploy-agent-batched.yml              # Batched deployment (any scale)
+│       ├── install-node-batched.yml              # Install node agent (batched)
+│       ├── install-machine-batched.yml           # Install machine agent (batched)
+│       ├── install-db-batched.yml                # Install db agent (batched)
+│       ├── install-java-batched.yml              # Install java agent (batched)
+│       ├── uninstall-node-batched.yml            # Uninstall node agent (batched)
+│       ├── uninstall-machine-batched.yml         # Uninstall machine agent (batched)
+│       ├── uninstall-db-batched.yml              # Uninstall db agent (batched)
+│       ├── uninstall-java-batched.yml            # Uninstall java agent (batched)
+│       └── stop-clean-smartagent-batched.yml     # Stop and clean Smart Agent (batched)
 ├── appdsmartagent_64_linux_25.10.0.497.zip
 ├── config.ini
 ├── hosts.txt (optional reference)
