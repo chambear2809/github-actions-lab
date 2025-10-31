@@ -35,20 +35,19 @@ jobs:
           
           # Create batches as JSON array
           BATCHES=$(echo "$HOSTS" | awk -v batch_size=$BATCH_SIZE '
-            BEGIN { batch=0; hosts="" }
+            BEGIN { batch=0; print "[" }
             {
               if (NR % batch_size == 1) {
-                if (hosts != "") {
-                  print hosts
-                }
-                hosts = "\"" $0 "\""
-                batch++
+                if (NR > 1) { print "]" }
+                if (NR > 1) { print "," }
+                print "["
+                printf "\"%s\"", $0
               } else {
-                hosts = hosts ",\"" $0 "\""
+                printf ",\"%s\"", $0
               }
             }
-            END { if (hosts != "") print hosts }
-          ' | jq -s -c '[.[] | split(",") | map(fromjson)]')
+            END { if (NR > 0) { print "]" }; print "]" }
+          ' | jq -c .)
           
           echo "batches=$BATCHES" >> $GITHUB_OUTPUT
           

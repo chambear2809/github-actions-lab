@@ -26,10 +26,19 @@ jobs:
           TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
           echo "total_batches=$TOTAL_BATCHES" >> $GITHUB_OUTPUT
           BATCHES=$(echo "$HOSTS" | awk -v batch_size=$BATCH_SIZE '
-            BEGIN { batch=0; hosts="" }
-            { if (NR % batch_size == 1) { if (hosts != "") { print hosts } hosts = "\"" $0 "\""; batch++ } else { hosts = hosts ",\"" $0 "\"" } }
-            END { if (hosts != "") print hosts }
-          ' | jq -s -c '[.[] | split(",") | map(fromjson)]')
+            BEGIN { batch=0; print "[" }
+            {
+              if (NR % batch_size == 1) {
+                if (NR > 1) { print "]" }
+                if (NR > 1) { print "," }
+                print "["
+                printf "\"%s\"", $0
+              } else {
+                printf ",\"%s\"", $0
+              }
+            }
+            END { if (NR > 0) { print "]" }; print "]" }
+          ' | jq -c .)
           echo "batches=$BATCHES" >> $GITHUB_OUTPUT
           echo "📊 Installing Machine agent on $TOTAL hosts across $TOTAL_BATCHES batches"
 
