@@ -35,6 +35,6 @@ jobs:
       - name: Install machine agent with smartagent
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
-            cd /opt/appdynamics
+            cd /opt/appdynamics/appdsmartagent
             sudo ./smartagentctl install machine
           EOF

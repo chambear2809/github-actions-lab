@@ -35,6 +35,6 @@ jobs:
       - name: Uninstall machine agent
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
-            cd /opt/appdynamics
+            cd /opt/appdynamics/appdsmartagent
             sudo ./smartagentctl uninstall machine
           EOF

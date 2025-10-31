@@ -55,13 +55,12 @@ jobs:
             
             # Extract and deploy
             cd /tmp
-            sudo mkdir -p /opt/appdynamics
-            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /tmp/agent
-            sudo cp -r /tmp/agent/* /opt/appdynamics/
-            sudo cp config.ini /opt/appdynamics/config.ini
+            sudo mkdir -p /opt/appdynamics/appdsmartagent
+            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent
+            sudo cp config.ini /opt/appdynamics/appdsmartagent/config.ini
             
             # Start the agent
-            cd /opt/appdynamics
+            cd /opt/appdynamics/appdsmartagent
             USER="${{ vars.SMARTAGENT_USER }}"
             GROUP="${{ vars.SMARTAGENT_GROUP }}"
             
