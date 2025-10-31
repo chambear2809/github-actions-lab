@@ -15,7 +15,7 @@ This lab demonstrates how to use GitHub Actions to manage AppDynamics Smart Agen
 - 🔄 **Complete Lifecycle Management** - Install, uninstall, stop, and clean agents
 - 🏗️ **Infrastructure as Code** - All workflows version-controlled
 - 🔐 **Secure** - SSH key-based authentication, private VPC networking
-- 📈 **Scalable** - Supports up to 256 hosts per workflow run
+- 📈 **Massively Scalable** - Deploy to thousands of hosts with automatic batching
 - 🎛️ **Self-hosted Runner** - Executes within your AWS VPC
 
 ## 📊 Architecture
@@ -77,9 +77,10 @@ gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-acti
 ## 📋 Available Workflows
 
 ### Initial Deployment
-| Workflow | Description | Trigger |
-|----------|-------------|----------|
-| **Deploy AppDynamics Smart Agent** | Installs Smart Agent and starts service | Push to `main` or manual |
+| Workflow | Description | Scale | Trigger |
+|----------|-------------|-------|----------|
+| **Deploy AppDynamics Smart Agent** | Installs Smart Agent and starts service | Up to 256 hosts | Push to `main` or manual |
+| **Deploy AppDynamics Smart Agent (Batched)** | Batched deployment for large-scale operations | **Thousands of hosts** | Manual only |
 
 ### Agent Installation
 | Workflow | Command | Trigger |
@@ -125,9 +126,25 @@ gh workflow run "Deploy AppDynamics Smart Agent" --repo chambear2809/github-acti
 
 ## 📈 Scaling
 
-- Supports up to **256 hosts** per workflow run (GitHub Actions matrix limit)
-- For larger deployments, implement batching or multiple runs
-- Self-hosted runner resources scale with parallel job count
+### Small to Medium Deployments (≤256 hosts)
+Use **Deploy AppDynamics Smart Agent** workflow:
+- Leverages GitHub Actions matrix for parallel execution
+- Simple, fast, and efficient for smaller fleets
+
+### Large-Scale Deployments (>256 hosts)
+Use **Deploy AppDynamics Smart Agent (Batched)** workflow:
+- **Automatic batching** - Splits hosts into groups of 256 (configurable)
+- **Sequential batch processing** - Avoids overwhelming runner resources
+- **Parallel within batch** - Each batch deploys to 256 hosts simultaneously
+- **Proven at scale** - Designed for thousands of hosts
+
+**Why Batching?**
+GitHub Actions has a hard limit of 256 jobs per matrix. The batched workflow overcomes this by:
+1. Splitting your host list into manageable batches
+2. Processing each batch as a separate job
+3. Deploying to all hosts within each batch in parallel
+
+**Example:** 1,000 hosts = 4 batches × 256 hosts = 4 sequential jobs, each deploying in parallel
 
 ## 🤝 Contributing
 

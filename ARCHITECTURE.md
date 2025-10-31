@@ -93,14 +93,15 @@ graph LR
 
 ```mermaid
 graph TD
-    Root[GitHub Actions Workflows<br/>13 Total]
+    Root[GitHub Actions Workflows<br/>11 Total]
     
-    Root --> Deploy[Initial Deployment<br/>1 workflow]
+    Root --> Deploy[Initial Deployment<br/>2 workflows]
     Root --> Install[Agent Installation<br/>4 workflows]
     Root --> Uninstall[Agent Uninstallation<br/>4 workflows]
     Root --> Manage[Smart Agent Management<br/>1 workflow]
 
-    Deploy --> D1[Deploy AppDynamics<br/>Smart Agent]
+    Deploy --> D1[Deploy Standard<br/>≤256 hosts]
+    Deploy --> D2[Deploy Batched<br/>>256 hosts]
     
     Install --> I1[Install Node Agent]
     Install --> I2[Install Machine Agent]
@@ -180,7 +181,7 @@ graph LR
 
 ### GitHub Repository
 - **Stores**:
-  - 10 workflow YAML files
+  - 11 workflow YAML files
   - Smart Agent installation package
   - Configuration file (config.ini)
 - **Secrets**: SSH private key
@@ -191,22 +192,78 @@ graph LR
 ```mermaid
 graph TD
     A[Number of Hosts]
-    A -->|"≤ 256"| B[Single Workflow Run<br/>GitHub matrix strategy]
-    A -->|"> 256"| C[Multiple Runs or Batching]
+    A -->|"≤ 256"| B[Standard Workflow<br/>deploy-agent.yml]
+    A -->|"> 256"| C[Batched Workflow<br/>deploy-agent-batched.yml]
     
-    B --> D[All hosts execute in parallel]
-    C --> E[Batch 1: Hosts 1-256]
-    C --> F[Batch 2: Hosts 257-512]
-    C --> G[Batch N...]
+    B --> D[GitHub Actions Matrix<br/>All hosts in parallel]
+    
+    C --> E[Prepare Job<br/>Split into batches]
+    E --> F[Batch 1: 256 hosts<br/>Parallel deployment]
+    E --> G[Batch 2: 256 hosts<br/>Parallel deployment]
+    E --> H[Batch N: Remaining hosts<br/>Parallel deployment]
+    
+    F --> I[Sequential Execution<br/>One batch at a time]
+    G --> I
+    H --> I
 
     style A fill:#0366d6,color:#fff
     style B fill:#28a745,color:#fff
     style C fill:#ffd33d,color:#000
     style D fill:#c8e6c9,color:#000
-    style E fill:#fff3e0,color:#000
+    style E fill:#e1bee7,color:#000
     style F fill:#fff3e0,color:#000
     style G fill:#fff3e0,color:#000
+    style H fill:#fff3e0,color:#000
+    style I fill:#ffccbc,color:#000
 ```
+
+## Batched Workflow Architecture
+
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub Actions
+    participant Prep as Prepare Job
+    participant B1 as Batch 1 (256 hosts)
+    participant B2 as Batch 2 (256 hosts)
+    participant BN as Batch N (remaining)
+
+    Dev->>GH: Trigger batched workflow
+    GH->>Prep: Start prepare job
+    Prep->>Prep: Load DEPLOYMENT_HOSTS variable
+    Prep->>Prep: Split into batches of 256
+    Prep->>Prep: Create batch matrix JSON
+    
+    Prep-->>GH: Output: batches array
+    
+    GH->>B1: Deploy batch 1 (sequential)
+    Note over B1: 256 parallel SSH connections
+    B1-->>GH: Batch 1 complete ✓
+    
+    GH->>B2: Deploy batch 2 (sequential)
+    Note over B2: 256 parallel SSH connections
+    B2-->>GH: Batch 2 complete ✓
+    
+    GH->>BN: Deploy batch N (sequential)
+    Note over BN: Remaining hosts in parallel
+    BN-->>GH: Batch N complete ✓
+    
+    GH-->>Dev: All batches deployed 🎉
+```
+
+### Why Sequential Batches?
+
+**Resource Management:**
+- Prevents overwhelming the self-hosted runner
+- Each batch opens 256 parallel SSH connections
+- Sequential processing ensures stable performance
+
+**Configurable:**
+- Default batch size: 256 (GitHub Actions matrix limit)
+- Adjustable via workflow input for smaller batches
+- Balance between speed and resource usage
 
 ---
 

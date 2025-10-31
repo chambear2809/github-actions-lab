@@ -15,7 +15,7 @@ This lab demonstrates automated AppDynamics Smart Agent management across multip
 - **Network Access**: Private IP communication between runner and targets via port 22 (SSH)
 
 ### Components
-- **GitHub Actions Workflows**: 13 workflows orchestrating agent lifecycle management
+- **GitHub Actions Workflows**: 11 workflows orchestrating agent lifecycle management
 - **Self-hosted Runner**: EC2 instance executing workflows from within the VPC
 - **Target Hosts**: Ubuntu EC2 servers receiving AppDynamics agents
 - **GitHub Repository**: Stores workflow configurations and deployment artifacts
@@ -207,34 +207,65 @@ For this lab setup with all EC2 instances in the same VPC and security group:
 
 ## Available Workflows
 
-This repository includes 13 workflows for complete Smart Agent lifecycle management:
+This repository includes 11 workflows for complete Smart Agent lifecycle management:
 
 ### Initial Deployment
+
+#### Standard Deployment (≤256 hosts)
 1. **Deploy AppDynamics Smart Agent** - Installs Smart Agent and starts the service
+   - Uses GitHub Actions matrix strategy for parallel execution
    - Supports optional `--user` and `--group` parameters via GitHub variables
    - Auto-triggers on push to main, or manual via workflow_dispatch
+   - **Best for:** Small to medium deployments (up to 256 hosts)
+
+#### Large-Scale Deployment (>256 hosts)
+2. **Deploy AppDynamics Smart Agent (Batched)** - Batched deployment for thousands of hosts
+   - **Automatic batching:** Splits host list into configurable batch sizes (default: 256)
+   - **Sequential batch execution:** Processes batches one at a time to avoid overwhelming resources
+   - **Parallel within batch:** All hosts in a batch deploy simultaneously
+   - **Configurable:** Set custom batch size via workflow input
+   - Manual trigger only
+   - **Best for:** Large deployments (hundreds to thousands of hosts)
+   
+   **Why batching?** GitHub Actions limits matrix jobs to 256. This workflow overcomes that by:
+   - Dividing hosts into batches of 256 (or custom size)
+   - Creating one matrix job per batch
+   - Processing batches sequentially while deploying within each batch in parallel
+   
+   **Example:** 1,500 hosts → 6 batches × 256 hosts = 6 sequential jobs
 
 ### Agent Installation (Manual trigger only)
-2. **Install Node Agent** - `smartagentctl install node`
-3. **Install Machine Agent** - `smartagentctl install machine`
-4. **Install DB Agent** - `smartagentctl install db`
-5. **Install Java Agent** - `smartagentctl install java`
+3. **Install Node Agent** - `smartagentctl install node`
+4. **Install Machine Agent** - `smartagentctl install machine`
+5. **Install DB Agent** - `smartagentctl install db`
+6. **Install Java Agent** - `smartagentctl install java`
 
 ### Agent Uninstallation (Manual trigger only)
-6. **Uninstall Node Agent** - `smartagentctl uninstall node`
-7. **Uninstall Machine Agent** - `smartagentctl uninstall machine`
-8. **Uninstall DB Agent** - `smartagentctl uninstall db`
-9. **Uninstall Java Agent** - `smartagentctl uninstall java`
+7. **Uninstall Node Agent** - `smartagentctl uninstall node`
+8. **Uninstall Machine Agent** - `smartagentctl uninstall machine`
+9. **Uninstall DB Agent** - `smartagentctl uninstall db`
+10. **Uninstall Java Agent** - `smartagentctl uninstall java`
 
 ### Smart Agent Management (Manual trigger only)
-10. **Stop and Clean Smart Agent** - `smartagentctl stop` + `smartagentctl clean`
+11. **Stop and Clean Smart Agent** - `smartagentctl stop` + `smartagentctl clean`
     - Stops the Smart Agent service and purges all data
 
 ## Running Workflows
 
 ### Manual Trigger (CLI)
 ```bash
+# Standard deployment (≤256 hosts)
 gh workflow run "Deploy AppDynamics Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
+
+# Large-scale batched deployment (>256 hosts)
+gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
+
+# With custom batch size
+gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" \
+  --repo YOUR_USERNAME/YOUR_REPO \
+  -f batch_size=128
+
+# Other workflows
 gh workflow run "Install Node Agent" --repo YOUR_USERNAME/YOUR_REPO
 gh workflow run "Uninstall Machine Agent" --repo YOUR_USERNAME/YOUR_REPO
 gh workflow run "Stop and Clean Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
@@ -297,17 +328,68 @@ Simply update the `DEPLOYMENT_HOSTS` variable:
 3. Add new IPs (one per line)
 4. Save changes
 
-The workflow automatically processes all hosts in parallel using GitHub Actions matrix strategy.
+### Choosing the Right Workflow
 
-### Performance Considerations
-- GitHub Actions has a matrix limit of 256 jobs per workflow
-- For >256 hosts, consider batching or multiple workflow runs
-- Self-hosted runner resources scale with parallel job count
+#### For ≤256 Hosts: Standard Workflow
+Use **Deploy AppDynamics Smart Agent**:
+- Simple GitHub Actions matrix strategy
+- All hosts deploy in parallel
+- Fastest for smaller fleets
+- Auto-triggers on push to `main`
 
-### Alternative Approaches for Large Scale
-- Use multiple runners with labels for different host groups
-- Implement batching logic in the workflow
-- Consider complementary tools like Ansible for very large deployments
+#### For >256 Hosts: Batched Workflow
+Use **Deploy AppDynamics Smart Agent (Batched for Large Scale)**:
+- Automatic host batching (default: 256 per batch)
+- Sequential batch processing
+- Parallel deployment within each batch
+- Manual trigger with optional batch size customization
+
+### How Batching Works
+
+**The Challenge:** GitHub Actions limits matrix jobs to 256. 
+
+**The Solution:** The batched workflow automatically:
+1. **Splits** your host list into batches of N hosts (default 256)
+2. **Creates** one matrix job per batch
+3. **Processes** batches sequentially to avoid overwhelming the runner
+4. **Deploys** to all hosts within each batch in parallel using background processes
+
+**Example Scenarios:**
+- **500 hosts**: 2 batches × 256 hosts = 2 sequential jobs
+- **1,000 hosts**: 4 batches × 256 hosts = 4 sequential jobs  
+- **5,000 hosts**: 20 batches × 256 hosts = 20 sequential jobs
+
+### Performance Tuning
+
+#### Batch Size
+Adjust based on your runner's resources:
+```bash
+# Smaller batches (less resource intensive)
+gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" \
+  --repo YOUR_USERNAME/YOUR_REPO -f batch_size=128
+
+# Larger batches (faster, more resource intensive)  
+gh workflow run "Deploy AppDynamics Smart Agent (Batched for Large Scale)" \
+  --repo YOUR_USERNAME/YOUR_REPO -f batch_size=256
+```
+
+#### Runner Resources
+- **CPU**: More cores = better parallel SSH performance
+- **Memory**: 8GB+ recommended for 256 parallel connections
+- **Network**: Bandwidth scales with parallel connections
+
+### Monitoring Large Deployments
+
+View batch progress:
+```bash
+gh run list --workflow="deploy-agent-batched.yml" --repo YOUR_USERNAME/YOUR_REPO
+gh run view RUN_ID --repo YOUR_USERNAME/YOUR_REPO
+```
+
+Each batch logs:
+- Number of hosts in batch
+- Per-host deployment status
+- Batch completion summary
 
 ## Security Best Practices
 
@@ -332,7 +414,8 @@ The workflow automatically processes all hosts in parallel using GitHub Actions 
 github-action-lab/
 ├── .github/
 │   └── workflows/
-│       ├── deploy-agent.yml              # Initial Smart Agent deployment
+│       ├── deploy-agent.yml              # Standard deployment (≤256 hosts)
+│       ├── deploy-agent-batched.yml      # Large-scale batched deployment (>256 hosts)
 │       ├── install-node.yml              # Install node agent
 │       ├── install-machine.yml           # Install machine agent
 │       ├── install-db.yml                # Install db agent
@@ -347,6 +430,7 @@ github-action-lab/
 ├── hosts.txt (optional reference)
 ├── README.md
 ├── DEPLOYMENT_GUIDE.md
+├── ARCHITECTURE.md
 └── .gitignore
 ```
 
