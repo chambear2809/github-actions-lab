@@ -113,7 +113,29 @@ jobs:
                   -o StrictHostKeyChecking=no \
                   -o UserKnownHostsFile=/dev/null \
                   -o ConnectTimeout=30 \
-                  "${SSH_USER}@${HOST}" "sudo apt-get update -qq && sudo apt-get install -y unzip && sudo mkdir -p /opt/appdynamics/appdsmartagent && sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent && sudo cp config.ini /opt/appdynamics/appdsmartagent/config.ini && sudo rm -rf /tmp/agent_extract && cd /opt/appdynamics/appdsmartagent && if [ -n '$SMARTAGENT_USER' ] && [ -n '$SMARTAGENT_GROUP' ]; then sudo ./smartagentctl start --enable-auto-attach --service --user '$SMARTAGENT_USER' --group '$SMARTAGENT_GROUP'; else sudo ./smartagentctl start --enable-auto-attach --service; fi"; then
+                  "${SSH_USER}@${HOST}" "SMARTAGENT_USER='$SMARTAGENT_USER' SMARTAGENT_GROUP='$SMARTAGENT_GROUP' bash -s" << 'EOF'
+                    set -e
+                    sudo apt-get update -qq && sudo apt-get install -y unzip
+                    
+                    # Clean up any existing installation
+                    sudo rm -rf /opt/appdynamics/appdsmartagent
+                    sudo mkdir -p /opt/appdynamics/appdsmartagent
+                    
+                    # Extract the zip directly to the target directory
+                    sudo unzip -o /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent
+                    
+                    # Copy config.ini to the target directory
+                    sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
+                    
+                    # Start the agent
+                    cd /opt/appdynamics/appdsmartagent
+                    if [ -n "$SMARTAGENT_USER" ] && [ -n "$SMARTAGENT_GROUP" ]; then
+                      sudo ./smartagentctl start --enable-auto-attach --service --user "$SMARTAGENT_USER" --group "$SMARTAGENT_GROUP"
+                    else
+                      sudo ./smartagentctl start --enable-auto-attach --service
+                    fi
+EOF
+              then
                 echo "✅ Completed deployment to $HOST"
               else
                 echo "❌ Failed to deploy to $HOST" >&2
