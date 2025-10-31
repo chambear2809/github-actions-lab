@@ -106,11 +106,14 @@ jobs:
               fi
               
               # Deploy and start agent
+              SMARTAGENT_USER="${{ vars.SMARTAGENT_USER }}"
+              SMARTAGENT_GROUP="${{ vars.SMARTAGENT_GROUP }}"
+              
               if ssh -i ~/.ssh/id_rsa_$HOST \
                   -o StrictHostKeyChecking=no \
                   -o UserKnownHostsFile=/dev/null \
                   -o ConnectTimeout=30 \
-                  "${SSH_USER}@${HOST}" << 'EOF'
+                  "${SSH_USER}@${HOST}" bash -s "$SMARTAGENT_USER" "$SMARTAGENT_GROUP" << 'EOF'
 # Install unzip if not present
 sudo apt-get update -qq
 sudo apt-get install -y unzip
@@ -123,8 +126,8 @@ sudo cp config.ini /opt/appdynamics/appdsmartagent/config.ini
 
 # Start the agent
 cd /opt/appdynamics/appdsmartagent
-USER="${{ vars.SMARTAGENT_USER }}"
-GROUP="${{ vars.SMARTAGENT_GROUP }}"
+USER="$1"
+GROUP="$2"
 
 if [ -n "$USER" ] && [ -n "$GROUP" ]; then
   sudo ./smartagentctl start --enable-auto-attach --service --user "$USER" --group "$GROUP"
