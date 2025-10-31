@@ -1,4 +1,4 @@
-name: Install DB Agent (Batched for Large Scale)
+name: 5. Install Database Agent
 
 on:
   workflow_dispatch:

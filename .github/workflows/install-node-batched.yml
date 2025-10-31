@@ -1,4 +1,4 @@
-name: Install Node Agent (Batched for Large Scale)
+name: 4. Install Node Agent
 
 on:
   workflow_dispatch:

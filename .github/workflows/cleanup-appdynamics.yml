@@ -1,4 +1,4 @@
-name: Remove All Agents /opt/appdynamics/ (Batched for Large Scale)
+name: 11. Cleanup All Agents
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Uninstall Java Agent (Batched for Large Scale)
+name: 8. Uninstall Java Agent
 
 on:
   workflow_dispatch:

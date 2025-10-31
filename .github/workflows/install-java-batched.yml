@@ -1,4 +1,4 @@
-name: Install Java Agent (Batched for Large Scale)
+name: 3. Install Java Agent
 
 on:
   workflow_dispatch:

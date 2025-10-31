@@ -1,4 +1,4 @@
-name: Stop and Clean Smart Agent (Batched for Large Scale)
+name: 6. Stop and Clean Smart Agent
 
 on:
   workflow_dispatch:

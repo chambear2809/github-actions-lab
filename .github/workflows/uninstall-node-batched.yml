@@ -1,4 +1,4 @@
-name: Uninstall Node Agent (Batched for Large Scale)
+name: 9. Uninstall Node Agent
 
 on:
   workflow_dispatch:

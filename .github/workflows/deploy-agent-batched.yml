@@ -1,4 +1,4 @@
-name: Deploy AppDynamics Smart Agent (Batched for Large Scale)
+name: 1. Deploy Smart Agent
 
 on:
   workflow_dispatch:

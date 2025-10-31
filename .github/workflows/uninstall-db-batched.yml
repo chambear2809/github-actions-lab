@@ -1,4 +1,4 @@
-name: Uninstall DB Agent (Batched for Large Scale)
+name: 10. Uninstall Database Agent
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Uninstall Machine Agent (Batched for Large Scale)
+name: 7. Uninstall Machine Agent
 
 on:
   workflow_dispatch:

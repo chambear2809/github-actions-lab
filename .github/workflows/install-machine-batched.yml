@@ -1,4 +1,4 @@
-name: Install Machine Agent (Batched for Large Scale)
+name: 2. Install Machine Agent
 
 on:
   workflow_dispatch:
