@@ -85,8 +85,8 @@ jobs:
                   -o UserKnownHostsFile=/dev/null \
                   -o ConnectTimeout=30 \
                   "${SSH_USER}@${HOST}" << 'EOF'
-                cd /opt/appdynamics/appdsmartagent
-                sudo ./smartagentctl install node
+cd /opt/appdynamics/appdsmartagent
+sudo ./smartagentctl install node
 EOF
               then
                 echo "✅ Completed Node agent installation on $HOST"

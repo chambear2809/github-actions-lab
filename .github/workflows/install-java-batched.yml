@@ -65,8 +65,8 @@ jobs:
               chmod 600 ~/.ssh/id_rsa_$HOST
               
               if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" << 'EOF'
-                cd /opt/appdynamics/appdsmartagent
-                sudo ./smartagentctl install java
+cd /opt/appdynamics/appdsmartagent
+sudo ./smartagentctl install java
 EOF
               then
                 echo "✅ Completed Java agent installation on $HOST"

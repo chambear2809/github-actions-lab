@@ -65,8 +65,8 @@ jobs:
               chmod 600 ~/.ssh/id_rsa_$HOST
               
               if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" << 'EOF'
-                cd /opt/appdynamics/appdsmartagent
-                sudo ./smartagentctl install machine
+cd /opt/appdynamics/appdsmartagent
+sudo ./smartagentctl install machine
 EOF
               then
                 echo "✅ Completed Machine agent installation on $HOST"
