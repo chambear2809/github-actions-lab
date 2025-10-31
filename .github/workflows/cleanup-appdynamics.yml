@@ -1,0 +1,27 @@
+name: Remove All Agents /opt/appdynamics/
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Delete AppDynamics directory
+        run: |
+          if [ -d "/opt/appdynamics" ]; then
+            sudo rm -rf /opt/appdynamics
+            echo "✓ Deleted /opt/appdynamics"
+          else
+            echo "Directory /opt/appdynamics does not exist"
+          fi
+      
+      - name: Verify deletion
+        run: |
+          if [ ! -d "/opt/appdynamics" ]; then
+            echo "✓ Confirmed: /opt/appdynamics has been removed"
+          else
+            echo "✗ Warning: /opt/appdynamics still exists"
+            exit 1
+          fi
