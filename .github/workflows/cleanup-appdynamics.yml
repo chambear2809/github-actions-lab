@@ -66,15 +66,7 @@ jobs:
               echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
               chmod 600 ~/.ssh/id_rsa_$HOST
               
-              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" <<'EOF'
-              if [ -d "/opt/appdynamics" ]; then
-                sudo rm -rf /opt/appdynamics
-                echo "✓ Deleted /opt/appdynamics"
-              else
-                echo "Directory /opt/appdynamics does not exist"
-              fi
-              EOF
-              then
+              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" 'if [ -d "/opt/appdynamics" ]; then sudo rm -rf /opt/appdynamics && echo "✓ Deleted /opt/appdynamics"; else echo "Directory /opt/appdynamics does not exist"; fi'; then
                 echo "✅ Completed cleanup on $HOST"
               else
                 echo "❌ Failed to clean up $HOST" >&2
