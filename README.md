@@ -156,10 +156,6 @@ All workflows use automatic batching to support any number of hosts:
 
 This is a lab/demo project. Feel free to fork and adapt for your own use cases!
 
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) for details
-
 ## 🔗 Links
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
