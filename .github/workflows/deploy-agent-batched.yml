@@ -87,6 +87,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Substitute access key in config
+        run: |
+          sed -i 's/{{ACCOUNT_ACCESS_KEY}}/${{ vars.ACCOUNT_ACCESS_KEY }}/g' config.ini
+
       - name: Deploy to batch hosts
         shell: bash
         run: |
