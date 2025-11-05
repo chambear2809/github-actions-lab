@@ -262,4 +262,4 @@ sequenceDiagram
 
 ---
 
-**Note**: All diagrams are written in Mermaid syntax and will render automatically on GitHub.
+**Note**: All diagrams are written in Mermaid syntax.
