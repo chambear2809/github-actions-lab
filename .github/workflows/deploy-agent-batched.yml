@@ -126,10 +126,10 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y unzip
             sudo rm -rf /opt/appdynamics/appdsmartagent
             sudo mkdir -p /opt/appdynamics/appdsmartagent
+            sudo chown -R ubuntu:ubuntu /opt/appdynamics/appdsmartagent/
 
             sudo unzip -o /tmp/AGENT_ZIP_PLACEHOLDER -d /opt/appdynamics/appdsmartagent
             sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
-            sudo chown -R ubuntu:ubuntu /opt/appdynamics/appdsmartagent/
 
             cd /opt/appdynamics/appdsmartagent
             if [ -n "${SMARTAGENT_USER:-}" ] && [ -n "${SMARTAGENT_GROUP:-}" ]; then
