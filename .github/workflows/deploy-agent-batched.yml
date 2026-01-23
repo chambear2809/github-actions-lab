@@ -111,6 +111,15 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
+          # Find the agent zip file
+          AGENT_ZIP=$(ls appdsmartagent_64_linux_*.zip 2>/dev/null | head -n1)
+          if [ -z "$AGENT_ZIP" ]; then
+            echo "❌ No AppDynamics agent zip file found"
+            exit 1
+          fi
+          echo "📦 Using agent file: $AGENT_ZIP"
+          AGENT_ZIP_BASENAME=$(basename "$AGENT_ZIP")
+
           # Remote script (heredoc kept literal)
           REMOTE_SCRIPT=$(cat << 'EOF'
             set -e
@@ -118,7 +127,7 @@ jobs:
             sudo rm -rf /opt/appdynamics/appdsmartagent
             sudo mkdir -p /opt/appdynamics/appdsmartagent
 
-            sudo unzip -o /tmp/appdsmartagent_64_linux_25.10.0.497.zip -d /opt/appdynamics/appdsmartagent
+            sudo unzip -o /tmp/AGENT_ZIP_PLACEHOLDER -d /opt/appdynamics/appdsmartagent
             sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
 
             cd /opt/appdynamics/appdsmartagent
@@ -133,6 +142,9 @@ jobs:
           EOF
           )
 
+          # Replace placeholder with actual filename
+          REMOTE_SCRIPT="${REMOTE_SCRIPT//AGENT_ZIP_PLACEHOLDER/$AGENT_ZIP_BASENAME}"
+
           SMARTAGENT_USER="${{ vars.SMARTAGENT_USER }}"
           SMARTAGENT_GROUP="${{ vars.SMARTAGENT_GROUP }}"
 
@@ -144,7 +156,7 @@ jobs:
               # Copy artifacts (single destination)
               if ! scp -i "$KEY_FILE" \
                     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 \
-                    appdsmartagent_64_linux_25.10.0.497.zip config.ini \
+                    "$AGENT_ZIP" config.ini \
                     "${SSH_USER}@${HOST}:/tmp/"; then
                 echo "❌ Failed to copy files to $HOST" >&2
                 echo "$HOST" >> "$FAIL_FILE"
