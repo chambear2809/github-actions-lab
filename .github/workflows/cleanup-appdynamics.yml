@@ -1,14 +1,21 @@
-name: 11. Cleanup All Agents
+---
+name: 11. Cleanup Smart Agent Directory
 
-# Cleanup workflow
-on:
+"on":
   workflow_dispatch:
     inputs:
       batch_size:
-        description: 'Number of hosts per batch'
+        description: Number of hosts per batch
         required: false
-        default: '256'
-        type: string
+        default: 256
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smartagent-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -18,83 +25,86 @@ jobs:
       total_hosts: ${{ steps.create-batches.outputs.total_hosts }}
       total_batches: ${{ steps.create-batches.outputs.total_batches }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - id: create-batches
-        run: |
-          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^$')
-          TOTAL=$(echo "$HOSTS" | wc -l | xargs)
-          echo "total_hosts=$TOTAL" >> $GITHUB_OUTPUT
-          BATCH_SIZE=${{ github.event.inputs.batch_size || '256' }}
-          TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
-          echo "total_batches=$TOTAL_BATCHES" >> $GITHUB_OUTPUT
-          BATCHES=$(echo "$HOSTS" | awk -v batch_size=$BATCH_SIZE '
-            BEGIN { batch=0; print "[" }
-            {
-              if (NR % batch_size == 1) {
-                if (NR > 1) { print "]" }
-                if (NR > 1) { print "," }
-                print "["
-                printf "\"%s\"", $0
-              } else {
-                printf ",\"%s\"", $0
-              }
-            }
-            END { if (NR > 0) { print "]" }; print "]" }
-          ' | jq -c .)
-          echo "batches=$BATCHES" >> $GITHUB_OUTPUT
-          echo "📊 Cleaning up /opt/appdynamics from $TOTAL hosts across $TOTAL_BATCHES batches"
+        name: Create host batches
+        env:
+          DEPLOYMENT_HOSTS: ${{ vars.DEPLOYMENT_HOSTS }}
+          BATCH_SIZE: ${{ inputs.batch_size || 256 }}
+        run: bash .github/scripts/create-batches.sh
 
   cleanup-batch:
     needs: prepare
     runs-on: self-hosted
+    if: >-
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.total_batches != '0'
     strategy:
       max-parallel: 1
       matrix:
         batch: ${{ fromJson(needs.prepare.outputs.batches) }}
     steps:
-      - name: Delete /opt/appdynamics from batch hosts
-        run: |
-          BATCH_HOSTS='${{ toJson(matrix.batch) }}'
-          BATCH_SIZE=$(echo "$BATCH_HOSTS" | jq '. | length')
-          SSH_USER="${{ vars.SSH_USER || 'ubuntu' }}"
-          echo "🚀 Deleting /opt/appdynamics from batch of $BATCH_SIZE hosts"
-          
-          FAILED_HOSTS=()
-          echo "$BATCH_HOSTS" | jq -r '.[]' | while read HOST; do
-            (
-              echo "📡 Cleaning up /opt/appdynamics on $HOST"
-              mkdir -p ~/.ssh
-              echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa_$HOST
-              chmod 600 ~/.ssh/id_rsa_$HOST
-              
-              if ssh -i ~/.ssh/id_rsa_$HOST -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 "${SSH_USER}@${HOST}" 'if [ -d "/opt/appdynamics/appdsmartagent" ]; then sudo rm -rf /opt/appdynamics/appdsmartagent/* /opt/appdynamics/appdsmartagent/.[!.]* && sudo chown -R ubuntu:ubuntu /opt/appdynamics/appdsmartagent/ && echo "✓ Cleared contents of /opt/appdynamics/appdsmartagent and fixed permissions"; else echo "Directory /opt/appdynamics/appdsmartagent does not exist"; fi'; then
-                echo "✅ Completed cleanup on $HOST"
-              else
-                echo "❌ Failed to clean up $HOST" >&2
-                echo "$HOST" >> /tmp/failed_hosts_$$
-              fi
-              
-              rm -f ~/.ssh/id_rsa_$HOST
-            ) &
-          done
-          wait
-          
-          if [ -f /tmp/failed_hosts_$$ ]; then
-            echo "❌ Some hosts failed:"
-            cat /tmp/failed_hosts_$$
-            rm -f /tmp/failed_hosts_$$
-            exit 1
-          fi
-          echo "✅ Batch cleanup complete"
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  summary:
-    needs: [prepare, cleanup-batch]
+      - name: Clear Smart Agent directory on batch hosts
+        env:
+          BATCH_HOSTS: ${{ toJson(matrix.batch) }}
+          OPERATION_LABEL: Cleanup Smart Agent Directory
+          REMOTE_COMMAND: |
+            if [[ -d /opt/appdynamics/appdsmartagent ]]; then
+              sudo find /opt/appdynamics/appdsmartagent \
+                -mindepth 1 \
+                -maxdepth 1 \
+                -exec rm -rf -- {} +
+              sudo chown -R "$TARGET_OWNER:$TARGET_GROUP" \
+                /opt/appdynamics/appdsmartagent
+              echo "Cleared /opt/appdynamics/appdsmartagent"
+            else
+              echo "/opt/appdynamics/appdsmartagent does not exist"
+            fi
+          SMARTAGENT_GROUP: ${{ vars.SMARTAGENT_GROUP }}
+          SMARTAGENT_USER: ${{ vars.SMARTAGENT_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+        run: bash .github/scripts/run-remote-command-batch.sh
+
+  check_client_inventory_api:
+    needs:
+      - prepare
+      - cleanup-batch
     runs-on: self-hosted
     if: always()
     steps:
-      - name: Cleanup Summary
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Client Inventory API
+        env:
+          API_CHECK_WARN_ONLY: "true"
+          CLIENT_INVENTORY_API_BASE_URL: >-
+            ${{ vars.CLIENT_INVENTORY_API_BASE_URL }}
+          CLIENT_INVENTORY_API_TOKEN: >-
+            ${{ secrets.CLIENT_INVENTORY_API_TOKEN }}
+          CLIENT_INVENTORY_SAMPLE_SIZE: >-
+            ${{ vars.CLIENT_INVENTORY_SAMPLE_SIZE || 1 }}
+        run: bash .github/scripts/check-client-inventory-api.sh
+
+  summary:
+    needs:
+      - prepare
+      - cleanup-batch
+      - check_client_inventory_api
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Cleanup summary
         run: |
-          echo "📊 AppDynamics Cleanup Summary"
-          echo "===================================="
+          echo "Smart Agent Directory Cleanup Summary"
+          echo "====================================="
           echo "Total hosts: ${{ needs.prepare.outputs.total_hosts }}"
           echo "Total batches: ${{ needs.prepare.outputs.total_batches }}"
           echo "Status: ${{ needs.cleanup-batch.result }}"
+          echo "API: ${{ needs.check_client_inventory_api.result }}"

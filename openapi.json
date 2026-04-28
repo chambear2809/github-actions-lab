@@ -1,0 +1,754 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Client Inventory API",
+    "description": "REST API for managing OpAMP client inventory.\n\nUse this API to browse registered clients, inspect individual client records, and retrieve the effective configuration currently associated with a client.\n\n## Authentication\nSend an access token in the `X-SF-Token` header.\n\nExample: `X-SF-Token: <token>`\n\n## Base Path\nAll endpoints in this specification are relative to `/fm-service/v1`.\n\n## Endpoints\n- `GET /clients` List clients\n- `GET /clients/{id}` Get client by ID\n- `GET /clients/{id}/config` Get client effective configuration\n- `POST /clients/configs:batch` Batch get client effective configurations",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Agent Management Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "{protocol}://{host}/fm-service/v1",
+      "description": "Base URL for the Client Inventory API",
+      "variables": {
+        "protocol": {
+          "default": "https",
+          "enum": ["http", "https"]
+        },
+        "host": {
+          "default": "localhost:50028"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "clients",
+      "description": "Browse registered clients and retrieve effective client configuration"
+    }
+  ],
+  "paths": {
+    "/clients": {
+      "get": {
+        "tags": ["clients"],
+        "summary": "List clients",
+        "description": "Retrieve a paginated inventory of registered clients. Use metadata filters to narrow results for environments, services, regions, or any other client-reported attributes.\n\n### Attribute Filtering\n\nUse the `filter` parameter with `key:value` format. Repeat the parameter to apply multiple filters.\n\n**Filtering Logic:**\n- Different keys = **AND** logic\n- Same key with multiple values = **OR** logic\n\n### Health Data\n\nHealth data is included by default. For analytical or high-volume queries where health details are not needed, set `include_health=false`.\n\n### Example Queries\n\n- Basic pagination: `GET /clients?limit=100&offset=0`\n- Single filter: `GET /clients?filter=env:prod`\n- AND across different keys: `GET /clients?filter=env:prod&filter=region:us-east`\n- OR for repeated same key: `GET /clients?filter=region:us-east&filter=region:us-west`\n- Exclude health data: `GET /clients?filter=service.name:otel-collector&include_health=false`",
+        "operationId": "listClients",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Size of page (number of items to return). The server enforces a configurable maximum (default: 1000).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 100
+            },
+            "example": 100
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination (number of items to skip)",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "include_health",
+            "in": "query",
+            "description": "Whether to include health data in the response. Default: true. Set to false to exclude health data for analytical queries.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "example": false
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "Filter by client metadata attribute in `key:value` format. Repeat to apply multiple filters. Multiple values for the same key = OR logic; different keys = AND logic.",
+            "schema": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "style": "form",
+            "explode": true,
+            "examples": {
+              "singleAttribute": {
+                "summary": "Filter by a single attribute",
+                "value": ["env:prod"]
+              },
+              "andAcrossKeys": {
+                "summary": "AND logic across different attributes",
+                "value": ["env:prod", "region:us-east"]
+              },
+              "orWithinKey": {
+                "summary": "OR logic for multiple values of the same attribute",
+                "value": ["region:us-east", "region:us-west"]
+              },
+              "serviceFilter": {
+                "summary": "Filter by service name",
+                "value": ["service.name:otel-collector"]
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with paginated client list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/clients/{id}": {
+      "get": {
+        "tags": ["clients"],
+        "summary": "Get client by ID",
+        "description": "Retrieve the current record for a single client by instance UID, including metadata, timestamps, and health information when available.",
+        "operationId": "getClient",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Client instance UID",
+            "schema": {
+              "type": "string"
+            },
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with client details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Client"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/clients/{id}/config": {
+      "get": {
+        "tags": ["clients"],
+        "summary": "Get client effective configuration",
+        "description": "Retrieve the effective configuration for a specific client. The response is keyed by config file name. Config file bodies are returned as base64-encoded bytes. Pass `stringify=true` to also receive UTF-8 string content for human-readable formats such as YAML or JSON.",
+        "operationId": "getClientConfig",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Client instance UID",
+            "schema": {
+              "type": "string"
+            },
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          {
+            "name": "stringify",
+            "in": "query",
+            "required": false,
+            "description": "When true, also returns config body as a UTF-8 string in the bodyStr field. Useful for human-readable formats such as application/yaml or application/json.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "example": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective configuration for the client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/clients/configs:batch": {
+      "post": {
+        "tags": ["clients"],
+        "summary": "Batch get client effective configurations",
+        "description": "Retrieve effective configurations for multiple clients in a single request. The response returns a map of `clientId` to configuration for found clients and lists missing client IDs in `notFound`.",
+        "operationId": "batchGetConfigs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchGetConfigRequest"
+              },
+              "examples": {
+                "basicBatch": {
+                  "summary": "Fetch configs for multiple clients",
+                  "value": {
+                    "clientIds": [
+                      "550e8400-e29b-41d4-a716-446655440000",
+                      "550e8400-e29b-41d4-a716-446655440001"
+                    ]
+                  }
+                },
+                "stringifiedBatch": {
+                  "summary": "Fetch configs and include UTF-8 string content",
+                  "value": {
+                    "clientIds": [
+                      "550e8400-e29b-41d4-a716-446655440000",
+                      "550e8400-e29b-41d4-a716-446655440001"
+                    ],
+                    "stringify": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Effective configurations for the requested clients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchGetConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Client": {
+        "type": "object",
+        "required": ["instance_uid", "org_id", "metadata", "created_at", "updated_at"],
+        "properties": {
+          "instance_uid": {
+            "type": "string",
+            "description": "Unique client identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "org_id": {
+            "type": "string",
+            "description": "Organization ID the client belongs to",
+            "example": "acme-corp"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Flat key-value attributes reported by the OpAMP client. Includes both identifying and non-identifying attributes.",
+            "example": {
+              "service.name": "otel-collector",
+              "service.version": "0.95.0",
+              "host.name": "prod-collector-01",
+              "os.type": "linux"
+            }
+          },
+          "health": {
+            "description": "Component health status from OpAMP ComponentHealth proto. For list: included by default, exclude with include_health=false. For get: always included if available.",
+            "allOf": [
+              { "$ref": "#/components/schemas/ComponentHealth" }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when client was first registered",
+            "example": "2024-01-15T10:30:00Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last state change from client (metadata, config, health, status, etc.)",
+            "example": "2024-01-28T14:22:35Z"
+          },
+          "last_heartbeat_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the server last received a heartbeat from this client.",
+            "example": "2024-01-28T14:25:10Z"
+          }
+        }
+      },
+      "ComponentHealth": {
+        "type": "object",
+        "description": "The health of the agent and any nested sub-components. The component_health_map can be nested to represent multi-level component hierarchies.",
+        "properties": {
+          "healthy": {
+            "type": "boolean",
+            "description": "Set to true if the component is up and healthy",
+            "example": true
+          },
+          "start_time_unix_nano": {
+            "type": "string",
+            "format": "int64",
+            "description": "Timestamp since the component is up, UNIX Epoch time in nanoseconds.",
+            "example": "1705323000000000000"
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Human-readable error message if the component is in erroneous state",
+            "example": "Failed to connect to backend: connection timeout"
+          },
+          "status": {
+            "type": "string",
+            "description": "Component status represented as a string.",
+            "example": "running"
+          },
+          "status_time_unix_nano": {
+            "type": "string",
+            "format": "int64",
+            "description": "The time when the component status was observed, UNIX Epoch time in nanoseconds.",
+            "example": "1706447355000000000"
+          },
+          "component_health_map": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ComponentHealth"
+            },
+            "description": "Map of nested component name to its health object. Values use the same recursive ComponentHealth schema.",
+            "example": {
+              "receiver": {
+                "healthy": false,
+                "last_error": "receiver-error",
+                "status": "failing",
+                "status_time_unix_nano": "33"
+              }
+            }
+          }
+        },
+        "example": {
+          "healthy": true,
+          "start_time_unix_nano": "11",
+          "last_error": "top-level-error",
+          "status": "degraded",
+          "status_time_unix_nano": "22",
+          "component_health_map": {
+            "receiver": {
+              "healthy": false,
+              "last_error": "receiver-error",
+              "status": "failing",
+              "status_time_unix_nano": "33"
+            }
+          }
+        }
+      },
+      "ClientListResponse": {
+        "type": "object",
+        "required": ["clients", "pagination"],
+        "properties": {
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMetadata"
+          }
+        }
+      },
+      "PaginationMetadata": {
+        "type": "object",
+        "required": ["limit", "offset", "total_count"],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of items requested per page",
+            "example": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of items skipped",
+            "example": 0
+          },
+          "total_count": {
+            "type": "integer",
+            "description": "Total number of items matching the query",
+            "example": 42573
+          },
+          "has_next": {
+            "type": "boolean",
+            "description": "Whether there are more items available",
+            "example": true
+          },
+          "next_offset": {
+            "type": "integer",
+            "description": "Offset value for the next page (only present if has_next is true)",
+            "example": 100
+          }
+        }
+      },
+      "AgentConfigFile": {
+        "type": "object",
+        "description": "A single config file entry within a client's effective configuration.",
+        "properties": {
+          "body": {
+            "type": "string",
+            "format": "byte",
+            "description": "Raw config file content, base64-encoded."
+          },
+          "bodyStr": {
+            "type": "string",
+            "description": "Config file content as a UTF-8 string. Only present when stringify=true was requested."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "MIME type of the config content.",
+            "example": "application/yaml"
+          }
+        }
+      },
+      "ClientConfigResponse": {
+        "type": "object",
+        "description": "Effective configuration for a single client. Keys are config file names, values are the config file contents.",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/AgentConfigFile"
+        },
+        "example": {
+          "controller-info.xml": {
+            "body": "cmVjZWl2ZXJzOgogIG90bHA6IHt9Cg==",
+            "bodyStr": "receivers:\n  otlp: {}\n",
+            "contentType": "application/yaml"
+          }
+        }
+      },
+      "BatchGetConfigRequest": {
+        "type": "object",
+        "required": ["clientIds"],
+        "properties": {
+          "clientIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of client instance UIDs to fetch effective configurations for. The server enforces a configurable maximum number of client IDs per request (default: 1000).",
+            "example": ["550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"]
+          },
+          "stringify": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also returns each config body as a UTF-8 string in the bodyStr field."
+          }
+        }
+      },
+      "BatchGetConfigResponse": {
+        "type": "object",
+        "properties": {
+          "configs": {
+            "type": "object",
+            "description": "Map of clientId to its effective configuration.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ClientConfigResponse"
+            }
+          },
+          "notFound": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Client IDs from the request that were not found."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Machine-readable error code",
+                "example": "BAD_REQUEST"
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable error message",
+                "example": "Bad Request"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Additional error details",
+                "example": {}
+              }
+            }
+          }
+        },
+        "example": {
+          "error": {
+            "code": "BAD_REQUEST",
+            "message": "Bad Request",
+            "details": {}
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required or the provided X-SF-Token is invalid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "missingToken": {
+                "summary": "No credentials were provided",
+                "value": {
+                  "error": {
+                    "code": "AUTH_TOKEN_MISSING",
+                    "message": "No valid credentials provided",
+                    "details": {}
+                  }
+                }
+              },
+              "malformedToken": {
+                "summary": "Credentials are malformed or unparseable",
+                "value": {
+                  "error": {
+                    "code": "AUTH_TOKEN_MALFORMED",
+                    "message": "Credentials are malformed or unparseable",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Access denied",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "missingScope": {
+                "summary": "Caller does not have the required scope",
+                "value": {
+                  "error": {
+                    "code": "AUTH_SCOPE_MISSING",
+                    "message": "Required permission scope is missing",
+                    "details": {}
+                  }
+                }
+              },
+              "filterNoMatch": {
+                "summary": "Authorization filter denies access",
+                "value": {
+                  "error": {
+                    "code": "AUTH_FILTER_NO_MATCH",
+                    "message": "Access denied by authorization filter",
+                    "details": {}
+                  }
+                }
+              },
+              "featureFlagDenied": {
+                "summary": "Feature is not enabled for the organization",
+                "value": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "feature not available for this organization",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Application-level validation error. This documented response describes the standard application-level error envelope. In rare lower-level failure paths, the server may return a non-JSON 400 response instead.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "badRequest": {
+                "summary": "Application-level request validation failed",
+                "value": {
+                  "error": {
+                    "code": "BAD_REQUEST",
+                    "message": "Bad Request",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "notFound": {
+                "summary": "The requested client does not exist or is not visible to the caller",
+                "value": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Not Found",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error. This documented response describes the standard application-level error envelope. In rare lower-level failure paths, the server may return a non-JSON 500 response instead.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "internalServerError": {
+                "summary": "Unexpected server-side failure",
+                "value": {
+                  "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "Internal Server Error",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "A dependent service required for authentication is unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "authProviderUnavailable": {
+                "summary": "Authentication provider is unavailable",
+                "value": {
+                  "error": {
+                    "code": "AUTH_PROVIDER_ERROR",
+                    "message": "Authentication service unavailable",
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "XSFToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-SF-Token",
+        "description": "Access token for API"
+      }
+    }
+  },
+  "security": [
+    { "XSFToken": [] }
+  ]
+}

@@ -1,458 +1,157 @@
 # AppDynamics Smart Agent Deployment Guide
 
 ## Overview
-This guide documents the automated deployment of AppDynamics Smart Agent to multiple Ubuntu hosts using GitHub Actions with a self-hosted runner.
 
-## Architecture
+This repository deploys and manages AppDynamics Smart Agent on Ubuntu EC2 hosts
+from GitHub Actions running on a self-hosted runner in the same AWS VPC.
 
-### Lab Setup
-This lab demonstrates automated AppDynamics Smart Agent management across multiple EC2 instances:
+All lifecycle workflows are manual, batch hosts from `DEPLOYMENT_HOSTS`, and
+process one batch at a time while running SSH work in parallel inside each
+batch.
 
-- **AWS Environment**: All resources deployed in a single AWS VPC
-- **Security Group**: All EC2 instances (runner and targets) share the same security group
-- **Self-hosted Runner**: One EC2 instance running the GitHub Actions runner
-- **Target Hosts**: Multiple Ubuntu EC2 instances within the same VPC
-- **Network Access**: Private IP communication between runner and targets via port 22 (SSH)
+## Required Configuration
 
-### Components
-- **GitHub Actions Workflows**: 11 workflows orchestrating agent lifecycle management
-- **Self-hosted Runner**: EC2 instance executing workflows from within the VPC
-- **Target Hosts**: Ubuntu EC2 servers receiving AppDynamics agents
-- **GitHub Repository**: Stores workflow configurations and deployment artifacts
+### GitHub Secrets
 
-### Workflow Design
-All workflows use a consistent two-job approach:
-1. **Prepare Job**: Loads target hosts from GitHub variables and creates a dynamic matrix
-2. **Action Job**: Runs in parallel for each host, executing the specific operation
+Set these in **Settings -> Secrets and variables -> Actions -> Secrets**:
 
-## Prerequisites
+- `SSH_PRIVATE_KEY`: PEM private key used by the runner to SSH to targets.
+- `APPD_ACCOUNT_ACCESS_KEY`: AppDynamics account access key. Do not store this
+  as a repository variable.
+- `CLIENT_INVENTORY_API_TOKEN`: token sent in the `X-SF-Token` header for
+  Client Inventory API checks. This is separate from `APPD_ACCOUNT_ACCESS_KEY`.
 
-### Infrastructure
-- AWS VPC with EC2 instances
-- Self-hosted GitHub Actions runner deployed in the same VPC
-- Target Ubuntu hosts with SSH access from the runner
-- SSH key pair (PEM file) for authentication
+If `ACCOUNT_ACCESS_KEY` exists as an Actions variable, delete it after creating
+the secret. The key was historically committed, so rotate it in AppDynamics and
+rewrite git history before treating this repository as clean.
 
-### Software
-- GitHub account with repository access
-- AWS account with EC2 instances
-- GitHub CLI (`gh`) for management (optional)
+### GitHub Variables
 
-## Setup Steps
+Set these in **Settings -> Secrets and variables -> Actions -> Variables**:
 
-### 1. Repository Setup
+- `DEPLOYMENT_HOSTS`: one target hostname or private IP per line.
+- `SSH_USER`: optional target SSH user. Defaults to `ubuntu`.
+- `SMARTAGENT_USER`: optional service user for Smart Agent.
+- `SMARTAGENT_GROUP`: optional service group for Smart Agent.
+- `CLIENT_INVENTORY_API_BASE_URL`: optional Client Inventory API base URL.
+  Defaults to `https://<ControllerURL from config.ini>/fm-service/v1`.
+- `CLIENT_INVENTORY_SAMPLE_SIZE`: optional number of clients sampled by API
+  checks. Defaults to `1`.
 
-Create a new GitHub repository:
-```bash
-mkdir github-action-lab
-cd github-action-lab
-git init
-```
+`SMARTAGENT_USER` and `SMARTAGENT_GROUP` must be set together.
 
-### 2. Create Workflow File
+### Runner Prerequisites
 
-Create the GitHub Actions workflow at `.github/workflows/deploy-agent.yml`:
+The self-hosted runner needs:
 
-```yaml
-name: Deploy AppDynamics Smart Agent
+- `bash`
+- `jq`
+- `sha256sum`
+- `ssh`, `scp`, and `ssh-keyscan`
 
-on:
-  workflow_dispatch:  # Manual trigger
-  push:
-    branches:
-      - main
+The deploy workflow installs `unzip` on targets with `apt-get` before extracting
+the Smart Agent package.
 
-jobs:
-  prepare:
-    runs-on: self-hosted
-    outputs:
-      hosts: ${{ steps.set-matrix.outputs.hosts }}
-    steps:
-      - id: set-matrix
-        run: |
-          HOSTS=$(echo "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^$' | xargs -n1 | jq -R . | jq -s -c .)
-          echo "hosts=$HOSTS" >> $GITHUB_OUTPUT
-  
-  deploy:
-    needs: prepare
-    runs-on: self-hosted
-    strategy:
-      matrix:
-        host: ${{ fromJson(needs.prepare.outputs.hosts) }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+## Client Inventory API Checks
 
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo "Host *" > ~/.ssh/config
-          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
-          echo "  UserKnownHostsFile=/dev/null" >> ~/.ssh/config
-          chmod 600 ~/.ssh/config
+`openapi.json` documents the Client Inventory API used for review-time API
+validation. The checker validates the spec and exercises:
 
-      - name: Copy agent zip to remote host
-        run: |
-          scp -i ~/.ssh/id_rsa appdsmartagent_64_linux_25.10.0.497.zip ubuntu@${{ matrix.host }}:/tmp/
+- `GET /clients`
+- `GET /clients/{id}`
+- `GET /clients/{id}/config`
+- `POST /clients/configs:batch`
 
-      - name: Copy config.ini to remote host
-        run: |
-          scp -i ~/.ssh/id_rsa config.ini ubuntu@${{ matrix.host }}:/tmp/
+The standalone `12. Check Client Inventory API` workflow can fail when the live
+API, URL, or token is wrong. The 11 lifecycle workflows run the same check after
+their lifecycle action in warning-only mode so API readiness is visible without
+blocking deploy/install/uninstall/cleanup while no test cluster is available.
 
-      - name: Deploy and start agent
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ matrix.host }} << 'EOF'
-            # Install unzip if not present
-            sudo apt-get update -qq
-            sudo apt-get install -y unzip
-            
-            # Extract and deploy
-            cd /tmp
-            sudo mkdir -p /opt/appdynamics
-            sudo unzip -o appdsmartagent_64_linux_25.10.0.497.zip -d /tmp/agent
-            sudo cp -r /tmp/agent/* /opt/appdynamics/
-            sudo cp config.ini /opt/appdynamics/config.ini
-            
-            # Start the agent
-            cd /opt/appdynamics
-            sudo ./smartagentctl start --enable-auto-attach --service
-          EOF
-```
+## Workflows
 
-### 3. Add Deployment Artifacts
+The repository contains 12 manual workflows:
 
-Place these files in the repository root:
-- `appdsmartagent_64_linux_25.10.0.497.zip` - AppDynamics Smart Agent package
-- `config.ini` - Agent configuration file
+- `1. Deploy Smart Agent`
+- `2. Install Machine Agent`
+- `3. Install Java Agent`
+- `4. Install Node Agent`
+- `5. Install Database Agent`
+- `6. Stop and Clean Smart Agent`
+- `7. Uninstall Machine Agent`
+- `8. Uninstall Java Agent`
+- `9. Uninstall Node Agent`
+- `10. Uninstall Database Agent`
+- `11. Cleanup Smart Agent Directory`
+- `12. Check Client Inventory API`
 
-### 4. Configure Self-Hosted Runner
-
-#### Install Runner on EC2 Instance
-
-1. Launch an EC2 instance in your VPC (Amazon Linux 2 or Ubuntu)
-2. Navigate to repository settings: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/actions/runners/new`
-3. SSH into the runner instance and execute the installation commands provided by GitHub
+All workflows accept a numeric `batch_size` input from `1` to `256`; the default
+is `256`.
 
 Example:
+
 ```bash
-# Download
-mkdir actions-runner && cd actions-runner
-curl -o actions-runner-linux-x64-2.311.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-linux-x64-2.311.0.tar.gz
-tar xzf ./actions-runner-linux-x64-2.311.0.tar.gz
-
-# Configure
-./config.sh --url https://github.com/YOUR_USERNAME/YOUR_REPO --token YOUR_TOKEN
-
-# Install as service
-sudo ./svc.sh install
-sudo ./svc.sh start
-```
-
-#### Verify Runner Status
-Check that the runner appears as "Idle" (green) in:
-`https://github.com/YOUR_USERNAME/YOUR_REPO/settings/actions/runners`
-
-### 5. Configure GitHub Secrets
-
-Navigate to: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/secrets/actions`
-
-#### Add SSH Private Key Secret
-
-1. Click **"New repository secret"**
-2. Name: `SSH_PRIVATE_KEY`
-3. Value: Paste the contents of your PEM file
-   ```bash
-   cat /path/to/your-key.pem
-   ```
-4. Click **"Add secret"**
-
-### 6. Configure GitHub Variables
-
-Navigate to: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/variables/actions`
-
-#### Add Deployment Hosts Variable
-
-1. Click **"New repository variable"**
-2. Name: `DEPLOYMENT_HOSTS`
-3. Value: Enter your target host IPs (one per line)
-   ```
-   172.31.1.243
-   172.31.1.48
-   172.31.1.5
-   ```
-4. Click **"Add variable"**
-
-### 7. Configure Optional Variables (for Smart Agent user/group)
-
-Navigate to: `https://github.com/YOUR_USERNAME/YOUR_REPO/settings/variables/actions`
-
-1. Click **"New repository variable"**
-2. Name: `SMARTAGENT_USER` (e.g., `appdynamics`)
-3. Click **"Add variable"**
-4. Repeat for `SMARTAGENT_GROUP` (e.g., `appdynamics`)
-
-These are optional and only used during initial Smart Agent deployment.
-
-### 8. Network Configuration
-
-For this lab setup with all EC2 instances in the same VPC and security group:
-- **Security Group Rules**:
-  - Allow inbound SSH (port 22) within the security group (source: same security group)
-  - Allow outbound HTTPS (port 443) to 0.0.0.0/0 (for GitHub API access)
-- **Private IPs**: Use private IP addresses (172.31.x.x) for `DEPLOYMENT_HOSTS`
-- **No public IPs needed**: Runner communicates with targets via private network
-
-## Available Workflows
-
-This repository includes **11 workflows** for complete Smart Agent lifecycle management:
-
-### Deployment (1 workflow)
-
-1. **Deploy Smart Agent (Batched)** - Installs Smart Agent and starts the service
-   - **Automatic batching:** Splits host list into configurable batch sizes (default: 256)
-   - **Sequential batch execution:** Processes batches one at a time to avoid overwhelming resources
-   - **Parallel within batch:** All hosts in a batch deploy simultaneously
-   - **Configurable:** Set custom batch size via workflow input
-   - Supports optional `--user` and `--group` parameters via GitHub variables
-   - Manual trigger only
-   - **Works for any scale:** 1 host to thousands
-   
-   **Example:** 1,500 hosts → 6 batches × 256 hosts = 6 sequential jobs
-
-### Agent Installation - Batched (4 workflows, manual trigger only)
-2. **Install Node Agent (Batched)** - `smartagentctl install node`
-3. **Install Machine Agent (Batched)** - `smartagentctl install machine`
-4. **Install DB Agent (Batched)** - `smartagentctl install db`
-5. **Install Java Agent (Batched)** - `smartagentctl install java`
-
-All install workflows support:
-- Configurable batch size (default: 256)
-- Sequential batch processing
-- Parallel execution within each batch
-- Works for any number of hosts (1 to thousands)
-
-### Agent Uninstallation - Batched (4 workflows, manual trigger only)
-6. **Uninstall Node Agent (Batched)** - `smartagentctl uninstall node`
-7. **Uninstall Machine Agent (Batched)** - `smartagentctl uninstall machine`
-8. **Uninstall DB Agent (Batched)** - `smartagentctl uninstall db`
-9. **Uninstall Java Agent (Batched)** - `smartagentctl uninstall java`
-
-All uninstall workflows support:
-- Configurable batch size (default: 256)
-- Sequential batch processing
-- Parallel execution within each batch
-- Works for any number of hosts (1 to thousands)
-
-### Smart Agent Management - Batched (2 workflows, manual trigger only)
-10. **Stop and Clean Smart Agent (Batched)** - `smartagentctl stop` + `smartagentctl clean`
-    - Stops the Smart Agent service and purges all data
-    - Configurable batch size (default: 256)
-    - Works for any number of hosts (1 to thousands)
-
-11. **Cleanup All Agents (Batched)** - `sudo rm -rf /opt/appdynamics`
-    - Completely removes the /opt/appdynamics directory
-    - Configurable batch size (default: 256)
-    - Works for any number of hosts (1 to thousands)
-    - Use for complete removal of all AppDynamics components
-
-## Running Workflows
-
-### Manual Trigger (CLI)
-```bash
-# Deploy Smart Agent (batched)
-gh workflow run "Deploy Smart Agent" --repo YOUR_USERNAME/YOUR_REPO
-
-# With custom batch size
-gh workflow run "Deploy Smart Agent" \
-  --repo YOUR_USERNAME/YOUR_REPO \
+gh workflow run "1. Deploy Smart Agent" \
+  --repo chambear2809/github-actions-lab \
   -f batch_size=128
-
-# Install agents (batched)
-gh workflow run "Install Node Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Install Machine Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Install DB Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Install Java Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-
-# Uninstall agents (batched)
-gh workflow run "Uninstall Node Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Uninstall Machine Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Uninstall DB Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-gh workflow run "Uninstall Java Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-
-# Stop and clean (batched)
-gh workflow run "Stop and Clean Smart Agent (Batched for Large Scale)" --repo YOUR_USERNAME/YOUR_REPO
-
-# Cleanup all agents (batched - complete removal)
-gh workflow run "Cleanup All Agents" --repo YOUR_USERNAME/YOUR_REPO
 ```
 
-### Manual Trigger (GitHub UI)
-1. Go to **Actions** tab
-2. Select the desired workflow from the left sidebar
-3. Click **"Run workflow"**
-4. Select branch (main)
-5. Optionally adjust batch size
-6. Click **"Run workflow"**
+## How Deployment Works
 
-## Monitoring and Troubleshooting
+1. The prepare job validates `DEPLOYMENT_HOSTS`, rejects empty or duplicate
+   host lists, validates `batch_size`, and emits a batch matrix.
+2. The batch job checks out the repository and runs the shared workflow script.
+3. The deploy script verifies the Smart Agent zip checksum using
+   `.github/checksums/appdsmartagent_64_linux_25.12.0.661.zip.sha256`.
+4. The deploy script writes a temporary `config.ini` with
+   `APPD_ACCOUNT_ACCESS_KEY` substituted for `{{ACCOUNT_ACCESS_KEY}}`.
+5. For each host, the script gathers the SSH host key into a per-run
+   `known_hosts` file, copies the zip and config to `/tmp`, extracts into
+   `/opt/appdynamics/appdsmartagent`, fixes ownership, and starts the service.
 
-### View Workflow Status
-```bash
-gh run list --repo YOUR_USERNAME/YOUR_REPO
-```
+The install, uninstall, stop-clean, and directory-cleanup workflows use the same
+validated batching and SSH path. All lifecycle workflows also run a warning-only
+Client Inventory API check after the lifecycle action completes.
 
-### View Specific Run Details
-```bash
-gh run view RUN_ID --repo YOUR_USERNAME/YOUR_REPO
-```
+## Security Notes
 
-### View Failed Logs
-```bash
-gh run view RUN_ID --log-failed --repo YOUR_USERNAME/YOUR_REPO
-```
-
-### Common Issues
-
-#### Runner Not Picking Up Jobs
-- Verify runner status: Check if it's online in repository settings
-- Check runner service: `sudo systemctl status actions.runner.*`
-- Verify outbound HTTPS (443) connectivity to GitHub
-
-#### SSH Connection Failures
-- Verify SSH key is correctly configured in secrets
-- Ensure runner can reach target hosts on port 22
-- Check security group rules
-
-#### "hostname contains invalid characters"
-- Ensure `DEPLOYMENT_HOSTS` variable has clean newline-separated IPs
-- No trailing spaces or special characters
-
-## Scaling to Thousands of Hosts
-
-### Adding New Hosts
-Simply update the `DEPLOYMENT_HOSTS` variable:
-1. Go to repository variables settings
-2. Edit `DEPLOYMENT_HOSTS`
-3. Add new IPs (one per line)
-4. Save changes
-
-### Batched Workflows
-
-All workflows use batching for:
-- **Any scale** - Works with 1 host to thousands
-- **Optimized for large-scale** - No GitHub Actions matrix limit
-- **Configurable batching** - Adjust batch size based on your needs
-- **All operations** - Deploy, install, uninstall, stop-clean, cleanup
-- Manual trigger with optional batch size customization
-
-### How Batching Works
-
-**The Challenge:** GitHub Actions limits matrix jobs to 256. 
-
-**The Solution:** The batched workflow automatically:
-1. **Splits** your host list into batches of N hosts (default 256)
-2. **Creates** one matrix job per batch
-3. **Processes** batches sequentially to avoid overwhelming the runner
-4. **Deploys** to all hosts within each batch in parallel using background processes
-
-**Example Scenarios:**
-- **500 hosts**: 2 batches × 256 hosts = 2 sequential jobs
-- **1,000 hosts**: 4 batches × 256 hosts = 4 sequential jobs  
-- **5,000 hosts**: 20 batches × 256 hosts = 20 sequential jobs
-
-### Performance Tuning
-
-#### Batch Size
-Adjust based on your runner's resources:
-```bash
-# Smaller batches (less resource intensive)
-gh workflow run "Deploy Smart Agent" \
-  --repo YOUR_USERNAME/YOUR_REPO -f batch_size=128
-
-# Larger batches (faster, more resource intensive)  
-gh workflow run "Deploy Smart Agent" \
-  --repo YOUR_USERNAME/YOUR_REPO -f batch_size=256
-```
-
-#### Runner Resources
-- **CPU**: More cores = better parallel SSH performance
-- **Memory**: 8GB+ recommended for 256 parallel connections
-- **Network**: Bandwidth scales with parallel connections
-
-### Monitoring Large Deployments
-
-View batch progress:
-```bash
-gh run list --workflow="deploy-agent-batched.yml" --repo YOUR_USERNAME/YOUR_REPO
-gh run view RUN_ID --repo YOUR_USERNAME/YOUR_REPO
-```
-
-Each batch logs:
-- Number of hosts in batch
-- Per-host deployment status
-- Batch completion summary
-
-## Security Best Practices
-
-1. **SSH Key Management**
-   - Use GitHub Secrets for private keys (never commit to repository)
-   - Rotate SSH keys regularly
-   - Use separate keys for different environments
-
-2. **Runner Security**
-   - Keep runner in private VPC subnet
-   - Restrict runner security group to minimal required access
-   - Update runner software regularly
-
-3. **Access Control**
-   - Limit repository access to authorized users
-   - Use branch protection rules on `main`
-   - Enable required reviews for workflow changes
-
-## Repository Structure
-
-```
-github-action-lab/
-├── .github/
-│   └── workflows/
-│       ├── deploy-agent-batched.yml              # Deploy Smart Agent (batched)
-│       ├── install-node-batched.yml              # Install node agent (batched)
-│       ├── install-machine-batched.yml           # Install machine agent (batched)
-│       ├── install-db-batched.yml                # Install db agent (batched)
-│       ├── install-java-batched.yml              # Install java agent (batched)
-│       ├── uninstall-node-batched.yml            # Uninstall node agent (batched)
-│       ├── uninstall-machine-batched.yml         # Uninstall machine agent (batched)
-│       ├── uninstall-db-batched.yml              # Uninstall db agent (batched)
-│       ├── uninstall-java-batched.yml            # Uninstall java agent (batched)
-│       ├── stop-clean-smartagent-batched.yml     # Stop and clean Smart Agent (batched)
-│       └── cleanup-appdynamics.yml               # Cleanup all agents - remove /opt/appdynamics
-├── appdsmartagent_64_linux_25.10.0.497.zip
-├── config.ini
-├── hosts.txt (optional reference)
-├── README.md
-├── DEPLOYMENT_GUIDE.md
-├── ARCHITECTURE.md
-└── .gitignore
-```
+- Rotate the historical AppDynamics access key before using this repository for
+  real environments.
+- Store the replacement in `APPD_ACCOUNT_ACCESS_KEY`, not `ACCOUNT_ACCESS_KEY`.
+- Store the Client Inventory API token in `CLIENT_INVENTORY_API_TOKEN`; do not
+  reuse `APPD_ACCOUNT_ACCESS_KEY` for this API.
+- The workflows use per-run host-key discovery. For production, replace this
+  with pinned host keys or an internal SSH CA so host identity is independently
+  trusted.
+- Keep workflow file changes protected with branch protection and review
+  requirements.
+- Keep the runner and targets on private addresses. See `AWS_REMEDIATION.md`
+  for the current environment drift and proposed remediation sequence.
 
 ## Maintenance
 
-### Updating Agent Version
-1. Replace `appdsmartagent_64_linux_25.10.0.497.zip` with new version
-2. Update filename references in workflow if version number changes
-3. Commit and push to trigger deployment
+### Updating Smart Agent
 
-### Updating Configuration
-1. Modify `config.ini`
-2. Commit and push
-3. Workflow will deploy updated configuration to all hosts
+1. Replace `appdsmartagent_64_linux_25.12.0.661.zip`.
+2. Update `.github/checksums/<zip-name>.sha256`.
+3. Run:
 
-## Repository
+   ```bash
+   shasum -a 256 appdsmartagent_64_linux_25.12.0.661.zip
+   ```
 
-This deployment solution is available at:
-**https://github.com/chambear2809/github-actions-lab**
+4. Commit the new zip, checksum, and any config updates.
 
-Clone and adapt for your own AppDynamics Smart Agent deployments!
+### Validating Locally
+
+Run these checks before pushing:
+
+```bash
+jq empty openapi.json
+yamllint .github/workflows/*.yml
+shellcheck .github/scripts/*.sh
+bash .github/scripts/test-create-batches.sh
+bash .github/scripts/test-client-inventory-api.sh
+```
+
+Install and run `actionlint` as an additional GitHub Actions syntax check when
+available.
