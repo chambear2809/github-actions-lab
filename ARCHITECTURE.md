@@ -21,7 +21,7 @@ graph TB
         end
     end
 
-    User -->|git push| GH
+    User -->|manual workflow trigger| GH
     GH <-->|HTTPS:443<br/>Poll for jobs| Runner
     Runner -->|SSH:22<br/>Private IPs| T1
     Runner -->|SSH:22<br/>Private IPs| T2
@@ -46,7 +46,7 @@ sequenceDiagram
     participant Runner as Self-hosted Runner
     participant Target as Target Host(s)
 
-    Dev->>GH: 1. Push code or trigger workflow
+    Dev->>GH: 1. Trigger workflow manually
     GH->>GH: 2. Workflow event triggered
     Runner->>GH: 3. Poll for jobs (HTTPS:443)
     GH->>Runner: 4. Assign job to runner
@@ -93,12 +93,13 @@ graph LR
 
 ```mermaid
 graph TD
-    Root[GitHub Actions Workflows<br/>11 Total]
+    Root[GitHub Actions Workflows<br/>12 Total]
     
     Root --> Deploy[Deployment<br/>1 workflow]
     Root --> Install[Agent Installation<br/>4 batched workflows]
     Root --> Uninstall[Agent Uninstallation<br/>4 batched workflows]
     Root --> Manage[Smart Agent Management<br/>2 batched workflows]
+    Root --> Api[API Validation<br/>1 workflow]
 
     Deploy --> D1[Deploy Smart Agent<br/>Batched, Manual trigger]
     
@@ -113,13 +114,16 @@ graph TD
     Uninstall --> U4[Uninstall Java<br/>Batched]
     
     Manage --> M1[Stop and Clean<br/>Batched]
-    Manage --> M2[Cleanup All Agents<br/>Batched]
+    Manage --> M2[Cleanup Smart Agent Directory<br/>Batched]
+
+    Api --> A1[Check Client Inventory API<br/>Manual trigger]
 
     style Root fill:#6f42c1,color:#fff
     style Deploy fill:#28a745,color:#fff
     style Install fill:#0366d6,color:#fff
     style Uninstall fill:#dc3545,color:#fff
     style Manage fill:#fd7e14,color:#fff
+    style Api fill:#0d9488,color:#fff
 ```
 
 ## Data Flow
@@ -131,6 +135,7 @@ graph LR
         ZIP[Smart Agent ZIP]
         CFG[config.ini]
         SEC[Secrets/Variables]
+        OAS[openapi.json]
     end
 
     subgraph "Runner Execution"
@@ -145,6 +150,7 @@ graph LR
 
     WF --> PREP
     SEC --> PREP
+    OAS --> PREP
     PREP --> MATRIX
 
     ZIP --> TMP
@@ -173,7 +179,7 @@ graph LR
 ### Target Hosts
 - **OS**: Ubuntu Server
 - **Deployed Components**:
-  - Smart Agent (`/opt/appdynamics/`)
+  - Smart Agent (`/opt/appdynamics/appdsmartagent/`)
   - AppDynamics Agents (node, machine, db, java)
 - **Access**: 
   - Inbound SSH (22) from runner only
@@ -184,8 +190,8 @@ graph LR
   - 11 workflow YAML files
   - Smart Agent installation package
   - Configuration file (config.ini)
-- **Secrets**: SSH private key
-- **Variables**: Host list, user/group settings
+- **Secrets**: SSH private key, AppDynamics account access key, API token
+- **Variables**: Host list, SSH user, optional Smart Agent user/group
 
 ## Scaling Considerations
 

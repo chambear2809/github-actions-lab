@@ -43,8 +43,10 @@ cd github-actions-lab
 
 Navigate to: **Settings → Secrets and variables → Actions**
 
-**Required Secret:**
+**Required Secrets:**
 - `SSH_PRIVATE_KEY` - Your SSH private key (PEM format)
+- `APPD_ACCOUNT_ACCESS_KEY` - Your AppDynamics account access key
+- `CLIENT_INVENTORY_API_TOKEN` - Token sent as `X-SF-Token` for API checks
 
 ### 3️⃣ Set Up GitHub Variables
 
@@ -59,24 +61,27 @@ Navigate to: **Settings → Secrets and variables → Actions → Variables**
   ```
 
 **Optional Variables:**
+- `SSH_USER` - SSH user for target hosts (default: `ubuntu`)
 - `SMARTAGENT_USER` - User for Smart Agent service (e.g., `appdynamics`)
 - `SMARTAGENT_GROUP` - Group for Smart Agent service (e.g., `appdynamics`)
+- `CLIENT_INVENTORY_API_BASE_URL` - Optional API base URL override
+- `CLIENT_INVENTORY_SAMPLE_SIZE` - Optional client sample size (default: `1`)
 
 ### 4️⃣ Deploy!
 
 **Via GitHub UI:**
 1. Go to **Actions** tab
-2. Select **"Deploy Smart Agent"**
+2. Select **"1. Deploy Smart Agent"**
 3. Click **"Run workflow"**
 4. Optionally adjust batch size (default: 256)
 5. Click **"Run workflow"**
 
 **Via GitHub CLI:**
 ```bash
-gh workflow run "Deploy Smart Agent" --repo chambear2809/github-actions-lab
+gh workflow run "1. Deploy Smart Agent" --repo chambear2809/github-actions-lab
 
 # With custom batch size
-gh workflow run "Deploy Smart Agent" --repo chambear2809/github-actions-lab -f batch_size=128
+gh workflow run "1. Deploy Smart Agent" --repo chambear2809/github-actions-lab -f batch_size=128
 ```
 
 ## 📋 Available Workflows
@@ -106,29 +111,37 @@ gh workflow run "Deploy Smart Agent" --repo chambear2809/github-actions-lab -f b
 | Workflow | Description | Scale | Trigger |
 |----------|-------------|-------|----------|
 | **Stop and Clean Smart Agent (Batched)** | Stops service and purges data | Any | Manual only |
-| **Cleanup All Agents (Batched)** | Deletes /opt/appdynamics directory | Any | Manual only |
+| **Cleanup Smart Agent Directory** | Clears /opt/appdynamics/appdsmartagent | Any | Manual only |
 
-**Total: 11 workflows** - All batched workflows support configurable batch sizes (default: 256)
+### API Validation (1 workflow)
+| Workflow | Description | Trigger |
+|----------|-------------|----------|
+| **Check Client Inventory API** | Validates `openapi.json` and checks live API operations | Manual only |
+
+**Total: 12 workflows** - The 11 lifecycle workflows support configurable batch sizes (default: 256)
 
 ## 📚 Documentation
 
 - **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Complete setup and configuration instructions
 - **[Architecture Diagrams](ARCHITECTURE.md)** - Visual infrastructure and workflow diagrams
+- **[AWS Remediation Notes](AWS_REMEDIATION.md)** - Current lab drift and hardening sequence
 
 ## 🛠️ How It Works
 
-1. **Developer** pushes code or manually triggers a workflow
+1. **Developer** manually triggers a workflow
 2. **GitHub Actions** receives the event and assigns job to self-hosted runner
 3. **Runner** loads target hosts from GitHub variables
 4. **Parallel Execution** - Runner SSHs into each target host simultaneously
 5. **Commands Execute** - Install/uninstall/stop/clean operations run on each host
-6. **Results Reported** - Success/failure status sent back to GitHub
+6. **API Check Runs** - Client Inventory API check runs in warning-only mode
+7. **Results Reported** - Success/failure status sent back to GitHub
 
 ## 🔐 Security
 
 - **Private Network** - All communication via VPC private IPs
-- **SSH Keys** - Stored securely as GitHub secrets
-- **No Public Access** - Target hosts don't need public IPs
+- **Secrets** - SSH, AppDynamics, and API credentials are stored as GitHub secrets
+- **Host Keys** - Workflows build a per-run `known_hosts` file before SSH
+- **Private-first** - Target hosts do not require public IPs for deployment
 - **Security Group** - Restricts SSH access to runner only
 
 ## 📈 Scaling

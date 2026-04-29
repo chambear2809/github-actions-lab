@@ -1,0 +1,45 @@
+---
+name: 12. Check Client Inventory API
+
+"on":
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Optional API base URL override
+        required: false
+        type: string
+      sample_size:
+        description: Number of clients to sample for ID-based checks
+        required: false
+        default: 1
+        type: number
+      dry_run:
+        description: Validate inputs and OpenAPI contract without live requests
+        required: false
+        default: false
+        type: boolean
+      warn_only:
+        description: Log API check failures as warnings instead of failing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  check_client_inventory_api:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check Client Inventory API
+        env:
+          API_CHECK_DRY_RUN: ${{ inputs.dry_run || false }}
+          API_CHECK_WARN_ONLY: ${{ inputs.warn_only || false }}
+          CLIENT_INVENTORY_API_BASE_URL: ${{ inputs.base_url }}
+          CLIENT_INVENTORY_API_TOKEN: >-
+            ${{ secrets.CLIENT_INVENTORY_API_TOKEN }}
+          CLIENT_INVENTORY_SAMPLE_SIZE: ${{ inputs.sample_size || 1 }}
+        run: bash .github/scripts/check-client-inventory-api.sh

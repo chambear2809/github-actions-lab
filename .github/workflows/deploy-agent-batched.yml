@@ -1,13 +1,21 @@
+---
 name: 1. Deploy Smart Agent
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       batch_size:
-        description: 'Number of hosts per batch'
+        description: Number of hosts per batch
         required: false
-        default: '256'
-        type: string
+        default: 256
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smartagent-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -17,189 +25,74 @@ jobs:
       total_hosts: ${{ steps.create-batches.outputs.total_hosts }}
       total_batches: ${{ steps.create-batches.outputs.total_batches }}
     steps:
-      - name: Ensure jq is installed
-        run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y jq
-          fi
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
       - id: create-batches
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Read hosts (one per line) from Actions var, normalize, drop empties
-          HOSTS=$(printf '%s\n' "${{ vars.DEPLOYMENT_HOSTS }}" | tr -d '\r' | grep -v '^\s*$' || true)
-
-          # Count total hosts
-          TOTAL=$(printf '%s\n' "$HOSTS" | wc -l | xargs || true)
-          echo "total_hosts=$TOTAL" >> "$GITHUB_OUTPUT"
-
-          if [ "${TOTAL:-0}" -eq 0 ]; then
-            echo "total_batches=0" >> "$GITHUB_OUTPUT"
-            echo 'batches=[]' >> "$GITHUB_OUTPUT"
-            echo "ℹ️ No hosts provided."
-            exit 0
-          fi
-
-          # Batch size (string -> int)
-          BATCH_SIZE=${{ github.event.inputs.batch_size || '256' }}
-
-          # Calculate number of batches
-          TOTAL_BATCHES=$(( (TOTAL + BATCH_SIZE - 1) / BATCH_SIZE ))
-          echo "total_batches=$TOTAL_BATCHES" >> "$GITHUB_OUTPUT"
-
-          # Build JSON array of arrays: [ ["h1","h2",...], ["hX",...], ... ]
-          BATCHES=$(printf '%s\n' "$HOSTS" \
-            | awk -v batch_size="$BATCH_SIZE" '
-                BEGIN { outer_open=0 }
-                {
-                  if ((NR-1) % batch_size == 0) {
-                    if (outer_open==0) { printf "[["; outer_open=1 } else { printf "],[" }
-                    printf "%s\"%s\"", (1 ? "" : ","), $0
-                    next
-                  }
-                  printf ",\"%s\"", $0
-                }
-                END { if (outer_open==1) printf "]]"; else printf "[]" }
-              ' \
-            | jq -c .)
-
-          echo "batches=$BATCHES" >> "$GITHUB_OUTPUT"
-          echo "📊 Deploying to $TOTAL hosts across $TOTAL_BATCHES batches"
+        name: Create host batches
+        env:
+          DEPLOYMENT_HOSTS: ${{ vars.DEPLOYMENT_HOSTS }}
+          BATCH_SIZE: ${{ inputs.batch_size || 256 }}
+        run: bash .github/scripts/create-batches.sh
 
   deploy-batch:
     needs: prepare
     runs-on: self-hosted
-    if: needs.prepare.outputs.total_batches != '0'
+    if: >-
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.total_batches != '0'
     strategy:
       max-parallel: 1
       matrix:
         batch: ${{ fromJson(needs.prepare.outputs.batches) }}
-
     steps:
-      - name: Ensure jq is installed
-        run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y jq
-          fi
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Substitute access key in config
-        run: |
-          sed -i 's/{{ACCOUNT_ACCESS_KEY}}/${{ vars.ACCOUNT_ACCESS_KEY }}/g' config.ini
+      - name: Deploy Smart Agent to batch hosts
+        env:
+          APPD_ACCOUNT_ACCESS_KEY: ${{ secrets.APPD_ACCOUNT_ACCESS_KEY }}
+          BATCH_HOSTS: ${{ toJson(matrix.batch) }}
+          SMARTAGENT_GROUP: ${{ vars.SMARTAGENT_GROUP }}
+          SMARTAGENT_USER: ${{ vars.SMARTAGENT_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+        run: bash .github/scripts/deploy-smartagent-batch.sh
 
-      - name: Deploy to batch hosts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BATCH_HOSTS='${{ toJson(matrix.batch) }}'
-          BATCH_SIZE=$(jq 'length' <<<"$BATCH_HOSTS")
-          SSH_USER="${{ vars.SSH_USER || 'ubuntu' }}"
-          echo "🚀 Deploying to batch of $BATCH_SIZE hosts"
-
-          # Shared failure file path (works across subshells)
-          FAIL_FILE="/tmp/failed_hosts_${GITHUB_RUN_ID:-$$}"
-          : > "$FAIL_FILE"
-
-          # One key file per run (reuse across hosts)
-          KEY_FILE="$HOME/.ssh/id_rsa_ga_${GITHUB_RUN_ID:-$RANDOM}"
-          mkdir -p "$HOME/.ssh"
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-
-          # Find the agent zip file
-          AGENT_ZIP=$(ls appdsmartagent_64_linux_*.zip 2>/dev/null | head -n1)
-          if [ -z "$AGENT_ZIP" ]; then
-            echo "❌ No AppDynamics agent zip file found"
-            exit 1
-          fi
-          echo "📦 Using agent file: $AGENT_ZIP"
-          AGENT_ZIP_BASENAME=$(basename "$AGENT_ZIP")
-
-          # Remote script (heredoc kept literal)
-          REMOTE_SCRIPT=$(cat << 'EOF'
-            set -e
-            sudo apt-get update -qq && sudo apt-get install -y unzip
-            sudo rm -rf /opt/appdynamics/appdsmartagent
-            sudo mkdir -p /opt/appdynamics/appdsmartagent
-            sudo chown -R ubuntu:ubuntu /opt/appdynamics/appdsmartagent/
-
-            sudo unzip -o /tmp/AGENT_ZIP_PLACEHOLDER -d /opt/appdynamics/appdsmartagent
-            sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
-
-            cd /opt/appdynamics/appdsmartagent
-            if [ -n "${SMARTAGENT_USER:-}" ] && [ -n "${SMARTAGENT_GROUP:-}" ]; then
-              echo "Starting agent with user/group: $SMARTAGENT_USER/$SMARTAGENT_GROUP"
-              sudo ./smartagentctl start --enable-auto-attach --service --user "$SMARTAGENT_USER" --group "$SMARTAGENT_GROUP"
-            else
-              echo "Starting agent with default user/group"
-              sudo ./smartagentctl start --enable-auto-attach --service
-            fi
-            echo "Remote script completed successfully."
-          EOF
-          )
-
-          # Replace placeholder with actual filename
-          REMOTE_SCRIPT="${REMOTE_SCRIPT//AGENT_ZIP_PLACEHOLDER/$AGENT_ZIP_BASENAME}"
-
-          SMARTAGENT_USER="${{ vars.SMARTAGENT_USER }}"
-          SMARTAGENT_GROUP="${{ vars.SMARTAGENT_GROUP }}"
-
-          # Iterate hosts (parallelize per host)
-          while read -r HOST; do
-            (
-              echo "📡 Starting deployment to $HOST"
-
-              # Copy artifacts (single destination)
-              if ! scp -i "$KEY_FILE" \
-                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 \
-                    "$AGENT_ZIP" config.ini \
-                    "${SSH_USER}@${HOST}:/tmp/"; then
-                echo "❌ Failed to copy files to $HOST" >&2
-                echo "$HOST" >> "$FAIL_FILE"
-                exit 1
-              fi
-
-              # Run remote script
-              if echo "$REMOTE_SCRIPT" | ssh -i "$KEY_FILE" \
-                    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 \
-                    "${SSH_USER}@${HOST}" \
-                    "SMARTAGENT_USER='${SMARTAGENT_USER}' SMARTAGENT_GROUP='${SMARTAGENT_GROUP}' bash -s"; then
-                echo "✅ Completed deployment to $HOST"
-              else
-                echo "❌ Failed to deploy to $HOST" >&2
-                echo "$HOST" >> "$FAIL_FILE"
-              fi
-            ) &
-          done < <(jq -r '.[]' <<<"$BATCH_HOSTS")
-
-          # Wait for all backgrounded per-host jobs
-          wait
-
-          # Evaluate failures
-          if [ -s "$FAIL_FILE" ]; then
-            echo "❌ Some hosts failed:"
-            cat "$FAIL_FILE"
-            rm -f "$FAIL_FILE" "$KEY_FILE"
-            exit 1
-          fi
-
-          rm -f "$FAIL_FILE" "$KEY_FILE"
-          echo "✅ Batch deployment complete"
-
-  summary:
-    needs: [prepare, deploy-batch]
+  check_client_inventory_api:
+    needs:
+      - prepare
+      - deploy-batch
     runs-on: self-hosted
     if: always()
     steps:
-      - name: Deployment Summary
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check Client Inventory API
+        env:
+          API_CHECK_WARN_ONLY: "true"
+          CLIENT_INVENTORY_API_BASE_URL: >-
+            ${{ vars.CLIENT_INVENTORY_API_BASE_URL }}
+          CLIENT_INVENTORY_API_TOKEN: >-
+            ${{ secrets.CLIENT_INVENTORY_API_TOKEN }}
+          CLIENT_INVENTORY_SAMPLE_SIZE: >-
+            ${{ vars.CLIENT_INVENTORY_SAMPLE_SIZE || 1 }}
+        run: bash .github/scripts/check-client-inventory-api.sh
+
+  summary:
+    needs:
+      - prepare
+      - deploy-batch
+      - check_client_inventory_api
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Deployment summary
         run: |
-          echo "📊 Deployment Summary"
-          echo "===================="
+          echo "Deployment Summary"
+          echo "=================="
           echo "Total hosts: ${{ needs.prepare.outputs.total_hosts }}"
           echo "Total batches: ${{ needs.prepare.outputs.total_batches }}"
           echo "Status: ${{ needs.deploy-batch.result }}"
+          echo "API: ${{ needs.check_client_inventory_api.result }}"
