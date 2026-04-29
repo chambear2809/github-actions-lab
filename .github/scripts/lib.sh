@@ -119,6 +119,16 @@ run_remote_script() {
     <<<"$remote_script"
 }
 
+remote_output_reports_error() {
+  local output_file="$1"
+
+  if jq -e 'type == "object" and .error == true' "$output_file" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  grep -Eq '"error"[[:space:]]*:[[:space:]]*true' "$output_file"
+}
+
 copy_to_remote_tmp() {
   local host="$1"
   local key_file="$2"

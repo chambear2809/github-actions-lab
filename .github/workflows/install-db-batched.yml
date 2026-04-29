@@ -26,7 +26,7 @@ jobs:
       total_batches: ${{ steps.create-batches.outputs.total_batches }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - id: create-batches
         name: Create host batches
@@ -47,7 +47,7 @@ jobs:
         batch: ${{ fromJson(needs.prepare.outputs.batches) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Database Agent on batch hosts
         env:
@@ -70,7 +70,7 @@ jobs:
     if: always()
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check Client Inventory API
         env:

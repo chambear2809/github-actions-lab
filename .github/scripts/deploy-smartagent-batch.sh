@@ -68,6 +68,7 @@ sudo rm -rf /opt/appdynamics/appdsmartagent
 sudo mkdir -p /opt/appdynamics/appdsmartagent
 sudo unzip -oq "/tmp/$agent_zip_basename" -d /opt/appdynamics/appdsmartagent
 sudo cp /tmp/config.ini /opt/appdynamics/appdsmartagent/config.ini
+sudo rm -f "/tmp/$agent_zip_basename" /tmp/config.ini
 sudo chown -R "\$TARGET_OWNER:\$TARGET_GROUP" /opt/appdynamics/appdsmartagent
 
 cd /opt/appdynamics/appdsmartagent
@@ -80,6 +81,11 @@ if [[ -n "\$SMARTAGENT_USER" && -n "\$SMARTAGENT_GROUP" ]]; then
 else
   sudo ./smartagentctl start --enable-auto-attach --service
 fi
+sudo systemctl daemon-reload
+sudo systemctl is-active --quiet smartagent.service
+status_output="\$(sudo ./smartagentctl status)"
+echo "\$status_output"
+[[ "\$status_output" == *Running* ]]
 EOF
 )"
 

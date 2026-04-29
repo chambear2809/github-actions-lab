@@ -29,6 +29,7 @@ echo "$operation_label on batch of $batch_size hosts"
 while IFS= read -r host; do
   (
     known_hosts_file="$(mktemp "$tmp_dir/known_hosts.XXXXXX")"
+    output_file="$(mktemp "$tmp_dir/output.XXXXXX")"
     echo "Starting $operation_label on $host"
 
     if ! scan_host_key "$host" "$known_hosts_file"; then
@@ -36,9 +37,16 @@ while IFS= read -r host; do
       exit 0
     fi
 
-    if run_remote_script "$host" "$key_file" "$known_hosts_file" "$REMOTE_COMMAND"; then
+    if run_remote_script "$host" "$key_file" "$known_hosts_file" "$REMOTE_COMMAND" > "$output_file" 2>&1; then
+      cat "$output_file"
+      if remote_output_reports_error "$output_file"; then
+        echo "$operation_label reported an error on $host" >&2
+        echo "$host" >> "$fail_file"
+        exit 0
+      fi
       echo "Completed $operation_label on $host"
     else
+      cat "$output_file" >&2
       echo "Failed $operation_label on $host" >&2
       echo "$host" >> "$fail_file"
     fi
